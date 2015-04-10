@@ -104,7 +104,7 @@ function fixtopedge_plane(clip src, string v, float zero, float "a1", float "thr
 \                                      blankclip(src, height = h-lines-2, color_yuv=0)).crop(0,0,0,h)
     blurred = dither_merge16_8(last, blurred, mask)
     res = (a1 >= 100) ? last : blurred
-    return res.ditherpost(mode=dith_mode, pat=2, ampn = (dith_mode == -1) ? 1 : 0)
+    return (v=="0:0") ? src : res.ditherpost(mode=dith_mode, pat=2, ampn = (dith_mode == -1) ? 1 : 0)
 }
 
 function fixtopedge(clip src, string values, int "zero", float "a1", float "thr", int "dith_mode")

@@ -4,7 +4,7 @@ Some Avisynth  scipts
 Collection of small scripts. Some may be documented upon request.
 ###Debicubic16, DebicubicY16
 lsb output for debicubic is broken, those wrappers make it less broken.
-It shifts error from [+0..+128](on 16 bit scale) range to [-64..64] range.
+By default, script just shifts error from [+0..+128]\(on 16 bit scale) range to [-64..64] range.
 Pass a clip downscaled with Dither_resize16 to completely fix gradients or use iter=true (stolen from a certain encoder's blog) for actually precise debicubic at half speed 
 ###Mdenoise
 Simple MDegrain wrapper. Disable cachesuper if you want to use backward seeking.

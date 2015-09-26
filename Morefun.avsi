@@ -241,7 +241,7 @@ Function MoreFun (clip src, float "thr", int "radius", float "elast",
     dmask = (mask > 0) ? ((mixedmask && extramask && maskclip.IsYV12()) ? MergeMasks(maskclip, dmask).MergePlanes() :
 \                        (mixedmask && extramask) ? MergeMasks(maskclip.MergePlanes(), dmask.MergePlanes()) :
 \                        (extramask && mask>0) ? MergeMasks(maskclip, dmask) :
-\                        (extramask : maskclip
+\                        (extramask) ? maskclip :
 \                        (mixedmask) ? dmask.MergePlanes()
 \                                    : dmask)
 \                        : extramask

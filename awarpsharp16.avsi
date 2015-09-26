@@ -1,47 +1,3 @@
-/*
-awarpsharp16 - awarpsharp2 wrapper with additional features.
-Works with any planar YUV colorspaces, usage of non-square pixels is discouraged.
-Requires Dither package and a certain awarpsharp2 build.
-Parameters:
-  thresh: 0..255, default 128
-    Saturation limit for edge detection. Reduce for less aggressive sharpening.
-
-  blur: 0..100, default 2 for type 0, 3 for type 1
-    Number of blur passes over edge mask. Less passes increase sharpening effect,
-    but can produce major artefacts with high depth and thresh. You can use values
-    higher than 100, but probably won't see any difference.
-    Chroma is processed with (blur+1)/2 passes.
-
-  type: 0..1, default 0 for aWarpSharp2, 1 for aBlur
-    Type of blur:
-      0 - radius 6 blur
-      1 - radius 2 blur, requires around 8x more passes than type 0 for the same
-          effect (will be just 2.5x slower), but produce better quality
-
-  depth: -128..127, default 16 for aWarpSharp2, 3 for aWarp and aWarp4
-    Strength of the final warping. Negative values result in warping in opposite
-    direction.
-
-  chroma: 0..6
-    Processing mode for chroma planes (U and V):
-     -1 - similar to 4, additionally uses chroma sobel mask
-      0 - fill with zeroes
-      1 - don't care, default for aSobel and aBlur
-      2 - copy
-      3 - process
-      4 - guide by luma - aWarpSharp, aWarp and aWarp4 only, default for them
-      5 - same as 3, but don't process luma
-      6 - same as 4, but don't process luma
-
-  depthC: -128..127, default depth/3 for non-4:4:4 colorspaces, depth for YV24.
-    Strength of the final warping of chroma planes. Negative values result in 
-    warping in opposite direction.
-
-  lsb: 16bit stacked input and output
-
-  cplace: chroma placement "MPEG2"(default) or "MPEG1"
-*/
-
 function adddiff16_8_8(clip a, clip b, clip c, int "y", int "u", int "v")
 {
     diff = mt_makediff(b, c, y=y, u=u, v=v)
@@ -50,9 +6,12 @@ function adddiff16_8_8(clip a, clip b, clip c, int "y", int "u", int "v")
     return stackvertical(msb,lsb)
 }
 
-function box8(clip src, int "radius", int "y", int "u", int "v", int "mode")
+function box8(clip src, int "radius", int "radius2", int "radius3", int "y", int "u", int "v", int "mode")
 {
+	mode = Default(mode, -1)
     box = src.Dither_convert_8_to_16().Dither_box_filter16(radius=radius, y=y, u=u, v=v)
+    box = Defined(radius2) ? box.Dither_box_filter16(radius=radius2, y=y, u=u, v=v) : box
+    box = Defined(radius3) ? box.Dither_box_filter16(radius=radius3, y=y, u=u, v=v) : box
     return (mode<-1) ? box.dither_get_msb() : box.ditherpost(mode = mode)
 }
 
@@ -64,10 +23,11 @@ function Guidedwarp(clip src, clip guidesobel, int "thresh", int "blur", int "ty
     avgsrc = srcsobel.box8(radius=5, u=1, v=1, mode=-2)
     mul = mt_lutxy(avgsrc, avgguide, "x y / 255 *")
     #amplify sobel mask of src to match average values of guidesobel
-    srcsobel_amp = mt_lutxy(srcsobel, mul, "x y / 255 * x")
-    #same as max(min(guidesobel, srcsobel_amp), srcsobel) - reduce guidesobel in areas with no edges in src to avoid warping edges in wrong way
-    #(for example when chroma doesn't correlate much with luma), addes edges from srcsobel when those are not present in guidesobel
-    sobel = mt_clamp(guidesobel,srcsobel_amp,srcsobel,0,0).aBlur(blur=blur-1, type=type, chroma = 1)
+    srcsobel_amp = mt_lutxy(srcsobel, mul, "x y / 270 * x x max")
+    #similar to max(min(guidesobel, srcsobel_amp), srcsobel) - reduce guidesobel in areas with no edges in src
+    #to avoid warping edges in wrong way (for example when chroma doesn't correlate much with luma),
+    #adds edges from srcsobel when those are not present in guidesobel
+    sobel = mt_clamp(guidesobel,srcsobel_amp,srcsobel,8,8).aBlur(blur=blur-1, type=type, chroma = 1)
     return src.awarp(sobel, depth=depth, chroma=1)
 }
 

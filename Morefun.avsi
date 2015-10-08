@@ -397,8 +397,8 @@ Function Mdenoise(clip src, clip "anclip", int "pel", int "trad", int "sad", int
     default_super = src.MSuper (pel=pel, levels=1)
     super = Default(super, (anclip==src) ? super_an 
     \                                    : cachesuper ? default_super.requestlinear(clim=tr*2+3, elim=tr+2) : default_super)
-    mv32 = super_an.MAnalyse (delta=tr, multi = true, overlap=8, blksize=32, pzero=300)
-    mv8 = super_an.MRecalculate (mv32, tr=tr, thsad=sad*2/3, overlap=2,blksize=8)
+    mv32 = super_an.MAnalyse (delta=tr, multi = true, overlap=4, blksize=32, pzero=300)
+    mv8 = super_an.MRecalculate (mv32, tr=tr, thsad=sad*2/3, overlap=2, blksize=8)
     deg = src.MDegrainN (super, mv8, tr, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
     return deg
 }
@@ -454,6 +454,11 @@ Function DebicubicY16_internal(clip src, int target_width, int target_height, fl
     return debic
 }
 
+Function IsByte(int a)
+{
+    return (0 <= a) and (a <= 255)
+}
+
 function Credmask_Bmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3", bool "inv")
 {
     inv = Default(inv, false)
@@ -477,10 +482,10 @@ function Credmask_Bmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BE
 \                     : src.mt_inpand_ss(BExp3, prer=1, subspl = 3)
             m3 = src.mt_binarize(BThr3, !inv)
             m3 = m3.desusample(m2.Width, m2.Height, 3, point =false)
-            m2 = mt_logic(m2, m3, "and")
+            m2 = IsByte(BThr2) ? mt_logic(m2, m3, "and") : m3
         }
         m2 = m2.desusample(m1.Width(), m1.Height(), 3, point =false)
-        m1 = mt_logic(m1, m2, "and")
+        m1 = IsByte(BThr1) ? mt_logic(m1, m2, "and") : m2
     }
     return m1
 }
@@ -503,10 +508,10 @@ function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", 
     w = y.Credmask_Bmask(WThr1, WExp1, WThr2, WExp2, WThr3, WExp3, inv=true)
     c = mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +").Credmask_Bmask(CThr1, CExp1, CThr2, CExp2, CThr3, CExp3).Cx2()    
     e = y.mt_edge("min/max", 0,255).Credmask_Bmask(EThr1, EExp1, EThr2, EExp2, EThr3, EExp3, inv=true)
-    w = (WThr1>0) ? w : y.mt_lut(y=0)
-    w = (BThr1>0) ? mt_logic(w,b,"min") : w
-    w = (CThr1>0) ? mt_logic(w,c,"min") : w
-    w = (EThr1>0) ? mt_logic(w,e,"min") : w
+    w = (WThr1!=0) ? w : y.mt_lut(y=0)
+    w = (BThr1!=0) ? mt_logic(w,b,"min") : w
+    w = (CThr1!=0) ? mt_logic(w,c,"min") : w
+    w = (EThr1!=0) ? mt_logic(w,e,"min") : w
     clips = (BThr1>0) ? " b," : ""
     clips = (WThr1>0) ? clips+" w," : clips
     clips = (CThr1>0) ? clips+" c," : clips
@@ -754,4 +759,73 @@ Function minmotion(clip src, string "post", int "u", int "v")
     next = mt_makediff(src, src.selectevery(1, 1), u=3, v=3)
     minabs = mt_lutxy(next, prev, "x 128 - abs y 128 - abs min "+post, u=3, v=3)
     return minabs
+}
+
+Function SMoothD2yuv(clip src, int "quant", int "num_shift", int "Matrix", int "Qtype", int "ZW",  int "ncpu")
+{
+    Y = src.SmoothD2(quant=quant, num_shift=num_shift, Matrix=Matrix, Qtype=Qtype, ZW=ZW, ncpu=ncpu)
+    U = src.UtoY().SmoothD2(quant=quant, num_shift=num_shift, Matrix=Matrix, Qtype=Qtype, ZW=ZW, ncpu=ncpu)
+    V = src.VtoY().SmoothD2(quant=quant, num_shift=num_shift, Matrix=Matrix, Qtype=Qtype, ZW=ZW, ncpu=ncpu)
+    return YtoUV(U, V, Y)
+}
+
+Function SD2_preset(clip src, int "strength", int "num_shift", bool "display")
+{
+    strength = Default(strength, 0)
+    display = Default(display, false)
+    matrix = (strength < 22) ? 9 : 22
+    quant =  (strength < 13) ? strength+1
+    \          : (strength < 22) ? strength*2-11
+    \                                   : min(strength/9+2, 30)
+    quant = max(quant, 1)
+    db = src.SMoothD2yuv(quant=quant, matrix=matrix, num_shift=num_shift)
+    db = display ? db.subtitle("deblocked, strength="+string(strength), y=40) : db
+    return (strength < 0) ? src : db
+}
+
+
+#nnedimode is either 0/1 (like in nnedi, TFF assumed) or -1/1 to use prev/next frame
+Function UDMC(clip src,  clip "anclip", int "sad", bool "isb", bool "dct", bool "display")
+{
+    an = Default(anclip, src)
+    sad = Default(sad, 100)
+    dct = Default(dct, false)
+    display = Default(display, false)
+    isb = Default(isb, true)
+    super_a = an.MSuper()
+    super = src.MSuper(levels = 1)
+    v = manalyse(super_a, isb=isb, delta=1, blksize=32, overlap=0, pglobal=200, pzero=200, lambda=500, searchparam=16)
+    v = mrecalculate(super_a, v, blksize=8, overlap=4, pnew=20, thsad=sad/3, lambda=500, smooth=0, dct=dct?1:0)
+    comp = MCompensate(src, super, v, thsad=10000)
+    mask = mmask(src, v,  kind=1, ml=sad).converttoy8()
+    mask = mask.mt_lut("x 15 - 0 max 240 / 2 ^ 1000 *", u=3, v=3).mt_expand().mt_inflate().mt_inflate()
+    merged = comp.mt_merge(src, mask, luma=true,u=3,v=3)
+    merged = display ? merged.subtitle("motion compensated from " + (isb?"next":"previous")+" frame,", y=80) : merged
+    return merged
+}
+
+Function BDMC(clip src,  clip "anclip", int "sad", bool "dct", bool "display")
+{
+    an = Default(anclip, src)
+    sad = Default(sad, 100)
+    dct = Default(dct, false)
+    display = Default(display, false)
+    super_a = an.MSuper()
+    super = src.MSuper(levels = 1)
+    v = manalyse(super_a, delta=1, multi=true, blksize=32, overlap=0, pglobal=0, pzero=0, lambda=500, searchparam=16)
+    v = mrecalculate(super_a, v, blksize=8,overlap=4, pnew=20, thsad=sad/3, lambda=500, smooth=0, tr=1, dct=dct?1:0)
+    b=v.selecteven()
+    f=v.selectodd()
+    bmask = mmask(src,b,kind=1, ml=sad, Ysc=255)
+    fmask = mmask(src,f,kind=1, ml=sad, Ysc=255)
+    bcomp = MCompensate(src, super, b, thsad=10000)
+    fcomp = MCompensate(src, super, f, thsad=10000)
+    fmask = fmask.converttoy8().mt_expand()
+    bmask = bmask.converttoy8().mt_expand()
+    fbmask = mt_lutxy(fmask, bmask, "y x - x y + 24 max * 20 / 128 +")
+    fbtosrcmask = mt_lutxy(fmask, bmask, "x y min 10 - 0 max 245 / 2 ^ 1000 *").mt_expand().mt_inflate()
+    fbcomp = bcomp.mt_merge(fcomp, fbmask, luma=true,u=3,v=3)
+    merged = fbcomp.mt_merge(src, fbtosrcmask, luma=true,u=3,v=3)
+    merged = display ? merged.subtitle("bidirectional motion compensation,", y=80) : merged
+    return merged
 }

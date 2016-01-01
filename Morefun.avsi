@@ -352,13 +352,6 @@ function Dfttest_ss(clip src, int "subspl", bool "Y", bool "U", bool "V", int "f
         return dither_add16(src, diff, dif = true, y=Y?3:2, u=U?3:2,v=V?3:2)
 }
 
-Function MDegrainN16(clip src, clip super, clip mv, int tr, clip "lsbclip", clip "super_lsb", int "thSAD", int "thSADC", int "plane", int "limit", int "limitC", int "thSCD1", int "thSCD2", bool "isse", bool "planar", bool "lsb", int "thsad2", int "thsadc2", bool "mt")
-{
-    msb = src.MDegrainN(super, mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=lsb, thsad2=thsad2, thsadc2=thsadc2, mt=mt)
-    lsb = src.MDegrainN(Default(super_lsb, super), mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=true, thsad2=thsad2, thsadc2=thsadc2, mt=mt).ditherpost().To16(nullmsb=true)
-    return Defined(super_lsb) ? msb.dither_add16(lsb, u=3, v=3) : msb
-}
-
 Function MDegrainN16(clip src, clip super, clip mv, int tr, clip "super_lsb", int "thSAD", int "thSADC", int "plane", int "limit", int "limitC", int "thSCD1", int "thSCD2", bool "isse", bool "planar", bool "lsb", int "thsad2", int "thsadc2", bool "mt")
 {
     resmsb = src.MDegrainN(super, mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=true, thsad2=thsad2, thsadc2=thsadc2, mt=mt)
@@ -397,7 +390,7 @@ Function Mdenoise(clip src, clip "anclip", int "pel", int "trad", int "sad", int
     mv8 = super_an.MRecalculate (mv32, tr=tr, thsad=sad*2/3, overlap=2, blksize=8)
     # Degrain
     deg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
-    altdeg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
+    altdeg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=Default(100, altsad), thSAD2=Default(100, altsad)*2/3, lsb=lsb, limit=limit)
     deg = !Defined(altsad) ? deg : interleave(deg, altdeg)
     return deg
 }

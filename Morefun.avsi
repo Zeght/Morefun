@@ -117,8 +117,6 @@ Function HD_Edge(clip src, clip "msb", clip "lsb", string "mode", int "depth", i
     return (!hc) ? res : res.mt_logic(msb.mt_edge(mode=mode, thY1=thY2, thY2=thY2, thC1=thC2, thC2=thC2, y=y, u=u, v=v), "or")
 }
 
-
-
 Function PlanesMax(clip src)
 {
     src
@@ -190,7 +188,7 @@ Function MoreFun (clip src, float "thr", int "radius", float "elast",
     lsb     = Default (lsb,      true)
     lsb_in  = Default (lsb_in,   true)
     ref     = Default (ref,        src)
-    bigrad = Default(bigrad, radius * 3)
+    bigrad = Default(bigrad, min(91, radius * 3))
     bigmode = Default(bigmode, -1)
     bigthr = Default(bigthr, thr)
     bigthr_det = string(Default(bigthr_det, Round((bigthr+0.2)*2)))
@@ -199,10 +197,12 @@ Function MoreFun (clip src, float "thr", int "radius", float "elast",
     
     # Input range check. The other parameters are checked by the plugins.
     Assert (radius  > 0, "MoreFun: "+chr(34)+"radius" +chr(34)+" must be strictly positive.")
+    Assert (bigrad  > 0, "MoreFun: "+chr(34)+"bigrad" +chr(34)+" must be strictly positive.")
     Assert (radiusc > 0, "MoreFun: "+chr(34)+"radiusc"+chr(34)+" must be strictly positive.")
     Assert (thr     > 0, "MoreFun: "+chr(34)+"thr"    +chr(34)+" must be strictly positive.")
     Assert (thrc    > 0, "MoreFun: "+chr(34)+"thrc"   +chr(34)+" must be strictly positive.")
     Assert (thr_det > 0, "MoreFun: "+chr(34)+"thr_det"+chr(34)+" must be strictly positive.")
+    Assert (thr_detc> 0, "MoreFun: "+chr(34)+"thr_detc"+chr(34)+" must be strictly positive.")
     Assert (elast  >= 1, "MoreFun: "+chr(34)+"elast"  +chr(34)+" must be greater or equal to 1.")
     Assert (elastc >= 1, "MoreFun: "+chr(34)+"elastc" +chr(34)+" must be greater or equal to 1.")
     
@@ -255,7 +255,7 @@ Function MoreFun (clip src, float "thr", int "radius", float "elast",
     bigbl_16 = (bigmode > 0) ? src_16.dither_bilateral16(radius=bigrad, thr=bigthr*4.5, wmin=0.8, flat=0.9, subspl=bigrad * 6, u=2, v=2).Dither_limit_dif16(ref_16, thr=bigthr, elast=3.00, y=3, u=2, v=2)
 \                                                   : src_16.dither_smoothgrad(radius=bigrad, thr=bigthr)    
     merged = ConditionalFilter(bigmask, dither_merge16_8(bigbl_16, src_16, bigmask, luma = true), src_16, "AverageLuma()", "<","250")
-    src_16 = (bigmode == -1) ? src_16  : merged
+    src_16 = (bigmode < 0) ? src_16  : merged
     src_16
     flt_y  =                 Dither_gf3_smooth (last, src_8, ref_16, smode, radius,  thr,  elast,  lsb_in, wmin, subspl, yp, up2, vp2)
     flt_c  = (chroma_flag) ? Dither_gf3_smooth (last, src_8, ref_16, smode, radiusc, thrc, elastc, lsb_in, wmin, subspl, 1,  up,  vp) : flt_y
@@ -277,6 +277,24 @@ Function MoreFun (clip src, float "thr", int "radius", float "elast",
     (debug == 1       ) ? dmask    : result
     (debug == 1 && lsb) ? last.converttoyv12().stackvertical(bigmask.converttoyv12()) : last
     (debug == 2      ) ? src_16 : last
+    return last
+}
+
+Function box8(clip src, int "radius", int "radius2", int "radius3", int "y", int "u", int "v", int "mode")
+{
+    mode = Default(mode, -1)
+    box = src.Dither_convert_8_to_16().Dither_box_filter16(radius=radius, y=y, u=u, v=v)
+    box = Defined(radius2) ? box.Dither_box_filter16(radius=radius2, y=y, u=u, v=v) : box
+    box = Defined(radius3) ? box.Dither_box_filter16(radius=radius3, y=y, u=u, v=v) : box
+    return (mode<-1) ? box.dither_get_msb() : box.ditherpost(mode = mode, y=y, u=u, v=v)
+}
+
+function adddiff16_8_8(clip a, clip b, clip c, int "y", int "u", int "v")
+{
+    diff = mt_makediff(b, c, y=y, u=u, v=v)
+    msb = a.dither_get_msb().mt_adddiff(diff, y=y, u=u, v=v)
+    lsb = a.dither_get_lsb()
+    return stackvertical(msb,lsb)
 }
 
 Function Dither_round(clip src, int "depth", bool "reducerange")
@@ -292,6 +310,297 @@ Function Dither_round(clip src, int "depth", bool "reducerange")
     lsb = mt_lut(lsb, string(256+step)+" x - "+string(step/2-1)+" + "+sstep+" % "+string(step/2-1)+" - x + 256 %", u=3, v=3)
     keptrange = stackvertical(msb,lsb)
     return reducerange ? reducedrange : keptrange
+}
+
+function average16(clip src1, clip src2, int "y", int "u", int "v")
+{
+    u = Default(u, 3)
+    v = Default(v, 3)
+    half = src1.blankclip(height = src1.height()/2, color_yuv =$808080).dither_convert_8_to_16()
+    return src1.dither_merge16(src2, half, y=y, u=u, v=v)
+}
+
+function Dfttest_ss(clip src, int "subspl", bool "Y", bool "U", bool "V", int "ftype", float "sigma", float "sigma2", float "pmin",
+\                    float "pmax", int "sbsize", int "smode", int "sosize", int "tbsize", int "tmode",
+\                    int "tosize", int "swin", int "twin", float "sbeta", float "tbeta", bool "zmean",
+\                    string "sfile", string "sfile2", string "pminfile", string "pmaxfile", float "f0beta",
+\                    string "nfile", int "threads", int "opt", string "nstring", string "sstring",
+\                    string "ssx", string "ssy", string "sst", int "dither", bool "lsb", bool "lsb_in",
+\                    bool "quiet")
+{
+        src
+        w = Width()
+        h = Height()/2
+        ss = Default(subspl, (w>1300) ? 3 : 2)
+        nw = w/(2*ss)*2
+        nh = h/(2*ss)*2
+        Y = Default(Y, True)
+        U = Default(U, True)
+        V = Default(V, True)
+        yp = (Y) ? 3 : 1
+        up = (U) ? 3 : 1
+        vp = (V) ? 3 : 1
+        ss = dither_resize16(nw, nh,kernel = "lanczos", y=yp, u=up,v=vp)
+        ssf = Dfttest_sp(ss, Y, U, V, ftype, sigma, sigma2, pmin,
+\                pmax, sbsize, smode, sosize, tbsize, tmode,
+\                tosize, swin, twin, sbeta, tbeta, zmean,
+\                sfile, sfile2, pminfile, pmaxfile, f0beta,
+\                nfile, threads, opt, nstring, sstring,
+\                ssx, ssy, sst, dither, lsb, lsb_in,
+\                quiet)
+        diff = dither_sub16(ssf,ss,dif = true, y=yp, u=up,v=vp).dither_resize16(w, h,kernel = "lanczos", y=yp, u=up,v=vp)
+        return dither_add16(src, diff, dif = true, y=Y?3:2, u=U?3:2,v=V?3:2)
+}
+
+Function MDegrainN16(clip src, clip super, clip mv, int tr, clip "lsbclip", clip "super_lsb", int "thSAD", int "thSADC", int "plane", int "limit", int "limitC", int "thSCD1", int "thSCD2", bool "isse", bool "planar", bool "lsb", int "thsad2", int "thsadc2", bool "mt")
+{
+    msb = src.MDegrainN(super, mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=lsb, thsad2=thsad2, thsadc2=thsadc2, mt=mt)
+    lsb = src.MDegrainN(Default(super_lsb, super), mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=true, thsad2=thsad2, thsadc2=thsadc2, mt=mt).ditherpost().To16(nullmsb=true)
+    return Defined(super_lsb) ? msb.dither_add16(lsb, u=3, v=3) : msb
+}
+
+Function MDegrainN16(clip src, clip super, clip mv, int tr, clip "super_lsb", int "thSAD", int "thSADC", int "plane", int "limit", int "limitC", int "thSCD1", int "thSCD2", bool "isse", bool "planar", bool "lsb", int "thsad2", int "thsadc2", bool "mt")
+{
+    resmsb = src.MDegrainN(super, mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=true, thsad2=thsad2, thsadc2=thsadc2, mt=mt)
+    reslsb = src.MDegrainN(Default(super_lsb, super), mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=false, thsad2=thsad2, thsadc2=thsadc2, mt=mt).To16(nullmsb=true)
+    res16 = Defined(super_lsb) ? resmsb.dither_add16(reslsb, u=3, v=3) : resmsb
+    return lsb ? res16 : res16.ditherpost(mode=6)
+}
+
+Function Mdenoise(clip src, clip "anclip", int "pel", int "trad", int "sad", int "sadc",
+\                int "altsad", int "limit", clip "super", clip "super_an", bool "cachesuper", bool "lsb_in", bool "lsb")
+{
+    sad  = Default(sad, 200)
+    sadc = Default(sadc, sad)
+    tr   = Default(trad, 5)
+    pel  = Default(pel, 2)
+    lsb  = Default(lsb, true)
+    lsb_in = Default(lsb_in, false)
+    cachesuper = Default(cachesuper, true)
+    # 16bit stuff
+    pelclip16 = pelclip(src, true)
+    pelmsb = pelclip16.dither_get_msb()
+    pellsb = pelclip16.dither_get_lsb()
+    lsbclip = lsb_in ? src.dither_get_lsb : src
+    src = lsb_in ? src.dither_get_msb : src
+    # Defaults, super clips, caching
+    anclip   = Default(anclip, lsb_in ? src : src.removegrain(12))
+    super_an = Default(super_an, anclip.MSuper (pel=pel, pelclip=((lsb_in && anclip==src) ? pelmsb : Undefined())))
+    super_an = cachesuper ? super_an.requestlinear(clim=tr*2+3, elim=tr+2) : super_an
+    default_super = src.MSuper (pel=pel, levels=1, pelclip=(lsb_in ? pelmsb : Undefined()))
+    super = Default(super, (anclip==src) ? super_an 
+    \                                    : cachesuper ? default_super.requestlinear(clim=tr*2+3, elim=tr+2) : default_super)
+    super_lsb = !lsb_in ? Undefined() : lsbclip.MSuper (pel=pel, levels=1, pelclip=pellsb)
+    super_lsb = !lsb_in ? Undefined() : cachesuper ? super_lsb.requestlinear(clim=tr*2+3, elim=tr+2) : super_lsb
+    # Motion analysis
+    mv32 = super_an.MAnalyse (delta=tr, multi=true, overlap=4, blksize=32, pzero=300)
+    mv8 = super_an.MRecalculate (mv32, tr=tr, thsad=sad*2/3, overlap=2, blksize=8)
+    # Degrain
+    deg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
+    altdeg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
+    deg = !Defined(altsad) ? deg : interleave(deg, altdeg)
+    return deg
+}
+
+Function Debicubic16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "iter")
+{
+    src.Debicubic16_internal(target_width, target_height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height,
+\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, chroma=true, iter=iter)
+}
+
+Function DebicubicY16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "Y8", bool "iter")
+{
+    src.Debicubic16_internal(target_width, target_height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height,
+\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, Y8=Y8, chroma=true, iter=iter)
+}
+Function Debicubic16_internal(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "Y8", bool "chroma", bool "iter")
+{
+    src_left = Default(src_left, 0)
+    src_top = Default(src_top, 0)
+    src_width = Default(src_width, src.Width)
+    src_width = (src_width > 0) ? src_width : src.Width + src_width - src_left
+    src_height = Default(src_height, src.Height/2)
+    src_height = (src_height > 0) ? src_height : src.Height/2 + src_height - src_top
+    #src_width/src_height actually means src_right/src_bottom in debicubic
+    src_widthd = src_left + src_width
+    src_heightd = src_top + src_height
+    chroma = default(Chroma, false) ? 3 : 1
+    Y8 = Default(Y8, false)
+    pp_only = Default(pp_only, false)
+    iter = Default(iter, false)
+    src = (!pp_only && !src.IsYV12) ? src.ConvertToYV12 : src
+    debic = pp_only ? src 
+\                   : (chroma==3) ? src.debicubic(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
+\                                 : src.debicubicY(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
+    debic = Y8 ? debic.ConvertToY8() : debic
+    msb = debic.dither_get_msb()
+    lsb = debic.dither_get_lsb()
+    msb = mt_lutxy(msb, lsb, "y 0 == x 1 - x ?", u=chroma, v=chroma)
+    lsb = mt_lut(lsb, "x 0 == 192 x ?", u=chroma, v=chroma)
+    debic = stackvertical(msb, lsb)
+    downscaled = (Defined(downscaled) && Y8 && !IsY8(downscaled)) ? downscaled.ConvertToY8() : downscaled
+    debic = Defined(downscaled) ? downscaled.Dither_limit_dif16(debic, thr = 0.25, elast = 1.5, u=chroma, v=chroma) : debic
+    
+    #optional "second pass"
+    inv_left = -src_left * target_width/src_width
+    inv_top = -src_top * target_height/src_height
+    inv_width = (src.Width) * target_width/src_width
+    inv_height = (src.Height/2) * target_height/src_height
+    rebic = debic.dither_resize16(src.Width, src.Height/2, inv_left, inv_top, inv_width, inv_height, kernel="cubic", a1=b, a2=c, fh=-1, fv=-1, u=chroma, v=chroma, cplace="MPEG1")
+    diff = Diff16_8(src, rebic.ConvertToYV12(), u=chroma, mul=256, v=chroma).Dither_convert_8_to_16()
+    assert(diff.isYV12(), string("NO"))
+    diff_debic = (chroma==3) ? diff.debicubic(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
+    \                        : diff.debicubicY(target_width, target_height, src_left, src_topd, src_widthd, src_height, true, b, c)
+    diff_debic = diff_debic.ditherpost(mode = -1, u=chroma, v=chroma).dither_lut8("x 128 255 * +", u=chroma, v=chroma)
+    diff_debic = Y8 ? diff_debic.ConvertToY8() : diff_debic
+    debic = (iter) ? debic.dither_add16(diff_debic, dif = true, u=chroma, v=chroma) : debic
+    return debic
+}
+
+Function AbsDiff(clip src1, clip src2, int "mul", int "y", int "u", int "v", bool "absolute")
+{
+    return Diff16_8(src1, src2, mul, y, u, v, true)
+}
+Function Diff16_8(clip src1, clip src2, int "mul", int "y", int "u", int "v", bool "absolute")
+{
+    y = Default(y, 3)
+    u = Default(u, 1)
+    v = Default(v, 1)
+    absolute = Default(absolute, false)
+    div = 256.0/Default(mul, 8)
+    diff = dither_sub16(src1,src2, dif = true, y=y, u=u, v=v)
+    msb = diff.dither_get_msb()
+    lsb = diff.dither_get_lsb()
+    expr = "x 256 * y + 128 256 * - " + ((absolute)?"abs ":"") +
+\           String(div)+" /" + ((absolute)?"":" 128 +")
+    diff = mt_lutxy(msb, lsb, expr, y=y, u=u, v=v)
+    return diff 
+}
+
+Function lutspa_whitebox(int "x1", int "y1", int "x2", int "y2", int "inflate", bool "cropped")
+{
+    inflate = Default(inflate, 8)
+    cropped = Default(cropped, false)
+    x1 = (cropped && Defined(x1)) ? inflate : x1
+    y1 = (cropped && Defined(y1)) ? inflate : y1
+    x2 = (cropped && Defined(x2)) ? inflate : x2
+    y2 = (cropped && Defined(y2)) ? inflate : y2
+    gr = 255.0 / (inflate + 1)
+    exp = ""
+    exp = Defined(x1) ? exp+"x "+string(x1-inflate)+" - " : exp
+    exp = Defined(y1) ? exp+"y "+string(y1-inflate)+" - " : exp
+    exp = Defined(x2) ? exp+string(x2+inflate)+" x - " : exp
+    exp = Defined(y2) ? exp+string(y2+inflate)+" y - " : exp
+    exp = Defined(x1) ? exp + "min  " : exp
+    exp = Defined(x2) ? exp + "min  " : exp
+    exp = Defined(y1) ? exp + "min  " : exp
+    exp = Defined(y2) ? exp + "min  " : exp
+    exp = exp.LeftStr(StrLen(exp)-5)+string(gr)+" * 0 max 255 min "
+    return exp
+}
+
+Function RFSR_Process_mappings_pair(string str, int frame)
+{
+     n = Chr(10)
+     split = str.FindStr(" ")
+     str = (split==1) ? str.RightStr(str.StrLen()-1) : str
+     split = str.FindStr(" ")
+     l = eval(str.LeftStr(split-1)) 
+     r = eval(str.RightStr(str.StrLen()-split))
+     map = "["+string(frame)+" "+string(frame+r-l)+"]"+"["+string(l)+" "+string(r)+"]"+n
+     frame = frame+r-l+1
+     return map+";"+string(frame)
+}
+Function RFSR_Process_mappings_single(string str, int frame)
+{ 
+    n = Chr(10)
+    a = str.FindStr(" ")
+    t = (a>0) ? eval(str.LeftStr(a)) : eval(str)
+    map = (IsInt(t)) ? string(frame) + " " + string(t) + n : ""
+    frame = IsInt(t) ? frame+1 : frame
+    return (a>0) ? map + RFSR_Process_mappings_single(str.RightStr(str.StrLen()-a), frame) : map+";"+string(frame)
+}
+
+Function  RFSR_Process_mappings(string mappings, int frame)
+{
+    l = mappings.FindStr("[")
+    r = mappings.FindStr("]")
+    map = (l>1) ? RFSR_Process_mappings_single(mappings.LeftStr(l-1), frame)
+    \     : (l==1) ? RFSR_Process_mappings_pair(mappings.MidStr(l+1, r-l-1), frame)
+    \                 :  RFSR_Process_mappings_single(mappings, frame)
+    sc = map.FindStr(";")
+    frame = eval(map.RightStr(map.StrLen()-sc))
+    map = map.LeftStr(sc-1)
+    r = (l>1) ? l-1 : r
+    return (l<=0) ? map+";"+string(frame) : map+RFSR_Process_mappings(mappings.RightStr(mappings.StrLen()-r), frame)
+}
+
+Function RemapFramesSimpleR(clip a, string "mappings")
+{
+    mappings = Default(mappings+" ", "").str_dedouble(" ")
+    mappings = RFSR_Process_mappings(mappings, 0)
+    sc = mappings.FindStr(";")
+    frames = eval(mappings.RightStr(mappings.StrLen()-sc))
+    mappings= mappings.LeftStr(sc-1)
+    a = (a.FrameCount()<frames) ? a.LengthenClip(frames) : a
+    a = RemapFrames(a, mappings = mappings)
+    return (a.FrameCount()>frames) ? a.Trim(0, frames-1) : a
+}
+
+Function quote(string s)
+{
+    return chr(34)+s+chr(34)
+}
+
+Function logicdownscale_makeexpr(int i, int n, string mode, int u, int v)
+{
+    ilogic = ".mt_logic(s.selectevery("+string(n)+","+string(i)+"), "+quote(mode)+", u="+string(u)+", v="+string(v)+")"
+    return (i==0) ? "s.selectevery("+string(n)+")" : logicdownscale_makeexpr(i-1, n, mode, u, v)+ilogic
+}
+
+Function logicdownscale_v(clip src, int "ss", string "mode", int "u", int "v", bool "vert")
+{
+    n = Default(ss, 2)
+    mode = Default(mode, "max")
+    u = Default(u, 3)
+    v = Default(v, 3)
+    vert = Default(vert, true)
+    h = vert ? src.Height : src.Width
+    mod = (src.IsYV12 || src.isYV16 && !vert) ? 2 : 1
+    neutral = (mode=="max" || mode == "or" || mode == "xor") ? $000000 : $FFFFFF
+    pad = vert ? src.Blankclip(height=mod*n - h%(mod*n), color_yuv=neutral).trim(0,-1).loop(src.FrameCount())
+\               : src.Blankclip(width=mod*n - h%(mod*n), color_yuv=neutral).trim(0,-1).loop(src.FrameCount())
+    src = (h%(n*mod)==0) ? src : vert ? src.StackVertical(pad) : src.StackHorizontal(pad)
+    s = vert ? src.separaterows(n) : src.separatecolumns(n)
+    exp = logicdownscale_makeexpr(n-1, n, mode, u, v)
+    return Eval(exp)
+}
+
+Function logicdownscale(clip src, int "ss", string "mode", int "u", int "v", bool "turn")
+{
+    turn = Default(turn, false)
+    return turn ? src.logicdownscale_v(ss, mode, u, v).turnLeft().logicdownscale_v(ss, mode, u, v).turnright()
+\               : src.logicdownscale_v(ss, mode, u, v).logicdownscale_v(ss, mode, u, v, false)
+}
+
+Function pelclip(clip src, bool "lsb")
+{
+    src
+    y = converttoy8().LanczosResize (width*2, height*2, src_left=0.25, src_top=0.25)
+    u = utoy8().LanczosResize (width, height, 0.25, 0.25)
+    v = vtoy8().LanczosResize (width, height, 0.25, 0.25)
+    return Default(lsb, false) ? dither_resize16(width*2, height, kernel="lanczos", center = false) : ytouv(u,v,y)
+}
+
+Function minmotion(clip src, string "post", int "u", int "v")
+{
+    post = Default(post, "")
+    u = Default(u, 3)
+    v = Default(v, 3)
+    prevdiff = mt_makediff(src, src.selectevery(1, -1), u=3, v=3)
+    nextdiff = prevdiff.selectevery(1,  1)
+    minabs = mt_lutxy(nextdiff, prevdiff, "x 128 - abs y 128 - abs min "+post, u=3, v=3)
+    return minabs
 }
 
 Function Odither(clip src, int "depth", bool "fullrange", bool "keepavg", string "fpre", string "fpost", int "colors", bool "random")
@@ -337,345 +646,60 @@ Function Odither(clip src, int "depth", bool "fullrange", bool "keepavg", string
     return mt_lutxy(src, patternclip, expr = exp)
 }
 
-function average16(clip src1, clip src2, int "y", int "u", int "v")
-{
-    u = Default(u, 3)
-    v = Default(v, 3)
-    half = src1.blankclip(height = src1.height()/2, color_yuv =$808080).dither_convert_8_to_16()
-    return src1.dither_merge16(src2, half, y=y, u=u, v=v)
-}
-
-
-
-function Dfttest_ss(clip src, int "subspl", bool "Y", bool "U", bool "V", int "ftype", float "sigma", float "sigma2", float "pmin",
-\                    float "pmax", int "sbsize", int "smode", int "sosize", int "tbsize", int "tmode",
-\                    int "tosize", int "swin", int "twin", float "sbeta", float "tbeta", bool "zmean",
-\                    string "sfile", string "sfile2", string "pminfile", string "pmaxfile", float "f0beta",
-\                    string "nfile", int "threads", int "opt", string "nstring", string "sstring",
-\                    string "ssx", string "ssy", string "sst", int "dither", bool "lsb", bool "lsb_in",
-\                    bool "quiet")
-{
-        src
-        w = Width()
-        h = Height()/2
-        ss = Default(subspl, (w>1300) ? 3 : 2)
-        nw = w/(2*ss)*2
-        nh = h/(2*ss)*2
-        Y = Default(Y, True)
-        U = Default(U, True)
-        V = Default(V, True)
-        yp = (Y) ? 3 : 1
-        up = (U) ? 3 : 1
-        vp = (V) ? 3 : 1
-        ss = dither_resize16(nw, nh,kernel = "lanczos", y=yp, u=up,v=vp)
-        ssf = Dfttest_sp(ss, Y, U, V, ftype, sigma, sigma2, pmin,
-\                pmax, sbsize, smode, sosize, tbsize, tmode,
-\                tosize, swin, twin, sbeta, tbeta, zmean,
-\                sfile, sfile2, pminfile, pmaxfile, f0beta,
-\                nfile, threads, opt, nstring, sstring,
-\                ssx, ssy, sst, dither, lsb, lsb_in,
-\                quiet)
-        diff = dither_sub16(ssf,ss,dif = true, y=yp, u=up,v=vp).dither_resize16(w, h,kernel = "lanczos", y=yp, u=up,v=vp)
-        return dither_add16(src, diff, dif = true, y=Y?3:2, u=U?3:2,v=V?3:2)
-}
-
-Function Mdenoise(clip src, clip "anclip", int "pel", int "trad", int "sad", int "sadc",
-\                int "limit", clip "super", clip "super_an", bool "cachesuper", bool "lsb")
-{
-    sad  = Default(sad, 200)
-    sadc = Default(sadc, sad)
-    tr   = Default(trad, 5)
-    pel  = Default(pel, 2)
-    lsb  = Default(lsb, true)
-    cachesuper = Default(cachesuper, true)
-    w = src.Width()
-    h = src.Height()
-    # Motion analysis
-    anclip = Default(anclip, src.removegrain(12))
-    super_an = Default(super_an, anclip.MSuper (pel=pel))
-    super_an = cachesuper ? super_an.requestlinear(clim=tr*2+3, elim=tr+2) : super_an
-    default_super = src.MSuper (pel=pel, levels=1)
-    super = Default(super, (anclip==src) ? super_an 
-    \                                    : cachesuper ? default_super.requestlinear(clim=tr*2+3, elim=tr+2) : default_super)
-    mv32 = super_an.MAnalyse (delta=tr, multi = true, overlap=4, blksize=32, pzero=300)
-    mv8 = super_an.MRecalculate (mv32, tr=tr, thsad=sad*2/3, overlap=2, blksize=8)
-    deg = src.MDegrainN (super, mv8, tr, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
-    return deg
-}
-
-Function Debicubic16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "iter")
-{
-    src.DebicubicY16_internal(target_width, target_height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height,
-\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, chroma=true, iter=iter)
-}
-
-Function DebicubicY16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "Y8", bool "iter")
-{
-    src.DebicubicY16_internal(target_width, target_height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height,
-\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, Y8=Y8, chroma=true, iter=iter)
-}
-Function DebicubicY16_internal(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "Y8", bool "chroma", bool "iter")
-{
-    src_left = Default(src_left, 0)
-    src_top = Default(src_top, 0)
-    src_width = Default(src_width, src.Width)
-    src_width = (src_width > 0) ? src_width : src.Width + src_width
-    src_height = Default(src_height, src.Height/2)
-    src_height = (src_height > 0) ? src_height : src.Height/2 + src_height
-    chroma = default(Chroma, false) ? 3 : 1
-    Y8 = Default(Y8, false)
-    pp_only = Default(pp_only, false)
-    iter = Default(iter, false)
-    src = (!pp_only && !src.IsYV12) ? src.ConvertToYV12 : src
-    debic = pp_only ? src 
-\                   : (chroma==3) ? src.debicubic(target_width, target_height, src_left, src_top, src_width, src_height, true, b, c)
-\                                 : src.debicubicY(target_width, target_height, src_left, src_top, src_width, src_height, true, b, c)
-    debic = Y8 ? debic.ConvertToY8() : debic
-    msb = debic.dither_get_msb()
-    lsb = debic.dither_get_lsb()
-    msb = mt_lutxy(msb, lsb, "y 0 == x 1 - x ?", u=chroma, v=chroma)
-    lsb = mt_lut(lsb, "x 0 == 192 x ?", u=chroma, v=chroma)
-    debic = stackvertical(msb, lsb)
-    downscaled = (Defined(downscaled) && Y8 && !IsY8(downscaled)) ? downscaled.ConvertToY8() : downscaled
-    debic = Defined(downscaled) ? downscaled.Dither_limit_dif16(debic, thr = 0.25, elast = 1.5, u=chroma, v=chroma) : debic
-    
-    #optional "second pass"
-    inv_left = -src_left * target_width/src_width
-    inv_top = -src_top * target_height/src_height
-    inv_width = (src.width-src_left) * target_width/src_width
-    inv_height = (src.height/2-src_top) * target_height/src_height
-    rebic = debic.dither_resize16(src.Width, src.Height/2, inv_left, inv_top, inv_width, inv_height, kernel="cubic", a1=b, a2=c, fh=-1, fv=-1, u=chroma, v=chroma, cplace="MPEG1")
-    diff = Diff16_8(src, rebic.ConvertToYV12(), u=chroma, mul=256, v=chroma).to16()
-    diff_debic = (chroma==3) ? diff.debicubic(target_width, target_height, src_left, src_top, src_width, src_height, true, b, c)
-\                                    : diff.debicubicY(target_width, target_height, src_left, src_top, src_width, src_height, true, b, c)
-    diff_debic = diff_debic.ditherpost(mode = -1, u=chroma, v=chroma).dither_lut8("x 128 255 * +", u=chroma, v=chroma)
-    diff_debic = Y8 ? diff_debic.ConvertToY8() : diff_debic
-    debic = (iter) ? debic.dither_add16(diff_debic, dif = true, u=chroma, v=chroma) : debic
-    return debic
-}
-
-Function IsByte(int a)
-{
-    return (0 <= a) and (a <= 255)
-}
-
-function Credmask_Bmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3", bool "inv")
-{
-    inv = Default(inv, false)
-    BExp1 = Default(BExp1, 0)
-    BExp2 = Default(BExp2, 0)
-    BExp3 = Default(BExp3, 0)
-    BThr1 = Default(BThr1, 0)
-    BThr2 = Default(BThr2, 0)
-    BThr3 = Default(BThr3, 0)
-    src = inv ? src.mt_expand_oct(BExp1) : src.mt_inpand_oct(BExp1)
-    m1 = src.mt_binarize(BThr1, !inv)
-    if (BExp2>BExp1)
-    {
-        src = inv ? src.mt_expand_ss(BExp2-BExp1+1, prer=1, subspl = 3)
-\                 : src.mt_inpand_ss(BExp2-BExp1+1, prer=1, subspl = 3)
-        m2 = src.mt_binarize(BThr2, !inv)
-        BExp3 = (BExp3-BExp2)/3-1
-        if (BExp3>0)
-        {
-            src = inv ? src.mt_expand_ss(BExp3, prer=1, subspl = 3)
-\                     : src.mt_inpand_ss(BExp3, prer=1, subspl = 3)
-            m3 = src.mt_binarize(BThr3, !inv)
-            m3 = m3.desusample(m2.Width, m2.Height, 3, point =false)
-            m2 = IsByte(BThr2) ? mt_logic(m2, m3, "and") : m3
-        }
-        m2 = m2.desusample(m1.Width(), m1.Height(), 3, point =false)
-        m1 = IsByte(BThr1) ? mt_logic(m1, m2, "and") : m2
-    }
-    return m1
-}
-
-function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3"
-\                                  , int "WThr1", int "WExp1", int "WThr2", int "WExp2", int "WThr3", int "WExp3"
-\                                  , int "CThr1", int "CExp1", int "CThr2", int "CExp2", int "CThr3", int "CExp3", int "u", int "v"
-\                                  , int "EThr1", int "EExp1", int "EThr2", int "EExp2", int "EThr3", int "EExp3")
-{
-    BThr1 = Default(BThr1, 0)
-    WThr1 = Default(WThr1, 0)
-    CThr1 = Default(CThr1, 0)
-    EThr1 = Default(EThr1, 0)
-    uc = Default(u, 128).string()
-    vc = Default(v, 128).string()
-    y = src.converttoy8()
-    u = src.IsY8 ? src : src.UtoY8()
-    V = src.IsY8 ? src : src.VtoY8()
-    b = y.Credmask_Bmask(BThr1, BExp1, BThr2, BExp2, BThr3, BExp3)
-    w = y.Credmask_Bmask(WThr1, WExp1, WThr2, WExp2, WThr3, WExp3, inv=true)
-    c = mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +").Credmask_Bmask(CThr1, CExp1, CThr2, CExp2, CThr3, CExp3).Cx2()    
-    e = y.mt_edge("min/max", 0,255).Credmask_Bmask(EThr1, EExp1, EThr2, EExp2, EThr3, EExp3, inv=true)
-    w = (WThr1!=0) ? w : y.mt_lut(y=0)
-    w = (BThr1!=0) ? mt_logic(w,b,"min") : w
-    w = (CThr1!=0) ? mt_logic(w,c,"min") : w
-    w = (EThr1!=0) ? mt_logic(w,e,"min") : w
-    clips = (BThr1>0) ? " b," : ""
-    clips = (WThr1>0) ? clips+" w," : clips
-    clips = (CThr1>0) ? clips+" c," : clips
-    clips = (EThr1>0) ? clips+" e," : clips
-    #evalstr = Makeminchain(clips, mt_logic())
-    #return Eval(evalst)
-    return w
-}
-
-
-Function AbsDiff(clip src1, clip src2, int "mul", int "y", int "u", int "v", bool "absolute")
-{
-    return Diff16_8(src1, src2, mul, y, u, v, true)
-}
-Function Diff16_8(clip src1, clip src2, int "mul", int "y", int "u", int "v", bool "absolute")
-{
-    y = Default(y, 3)
-    u = Default(u, 1)
-    v = Default(v, 1)
-    absolute = Default(absolute, false)
-    div = 256.0/Default(mul, 8)
-    diff = dither_sub16(src1,src2, dif = true, y=y, u=u, v=v)
-    msb = diff.dither_get_msb()
-    lsb = diff.dither_get_lsb()
-    expr = "x 256 * y + 128 256 * - " + ((absolute)?"abs ":"") +
-\           String(div)+" /" + ((absolute)?"":" 128 +")
-    diff = mt_lutxy(msb, lsb, expr, y=y, u=u, v=v)
-    return diff 
-}
-
 Function MaskCheckboard(clip src)
 {
-    dbc = src.dither_get_msb().AssumeFrameBased().separatefields()
-    dbc = mt_makediff(dbc.selectodd(),dbc.selecteven())
-    dbc = dbc.turnleft().AssumeFrameBased().separatefields()
-    return mt_makediff(dbc.selectodd(),dbc.selecteven()).turnright()
+    src.separaterows(2)
+    mt_makediff(SelectOdd(), SelectEven())
+    TurnLeft().separaterows(2)
+    return mt_makediff(selectodd(), selecteven()).TurnRight()
 }
 
-Function lutspa_whitebox(int "x1", int "y1", int "x2", int "y2", int "inflate", bool "cropped")
+Function tinflate(clip src, int "y", int "u", int "v")
 {
-    inflate = Default(inflate, 8)
-    cropped = Default(cropped, false)
-    x1 = (cropped && Defined(x1)) ? inflate : x1
-    y1 = (cropped && Defined(y1)) ? inflate : y1
-    x2 = (cropped && Defined(x2)) ? inflate : x2
-    y2 = (cropped && Defined(y2)) ? inflate : y2
-    gr = 255.0 / (inflate + 1)
-    exp = ""
-    exp = Defined(x1) ? exp+"x "+string(x1-inflate)+" - " : exp
-    exp = Defined(y1) ? exp+"y "+string(y1-inflate)+" - " : exp
-    exp = Defined(x2) ? exp+string(x2+inflate)+" x - " : exp
-    exp = Defined(y2) ? exp+string(y2+inflate)+" y - " : exp
-    exp = Defined(x1) ? exp + "min  " : exp
-    exp = Defined(x2) ? exp + "min  " : exp
-    exp = Defined(y1) ? exp + "min  " : exp
-    exp = Defined(y2) ? exp + "min  " : exp
-    exp = exp.LeftStr(StrLen(exp)-5)+string(gr)+" * 0 max 255 min "
-    return exp
+    src
+    prev = Trim(0,-1)++Trim(0, FrameCount-2)
+    next = Trim(1, FrameCount-1)++Trim(FrameCount-1,FrameCount-1)
+    try
+    {
+        avg = RAverageW(prev, 0.5, next, 0.5, y=y, u=IsY8()?1:u, v=IsY8()?1:v)
+    }
+    catch(err_msg)
+    {
+        avg = mt_average(prev, next, y=y, u=u, v=v)
+    }
+    return last.mt_logic(avg, "max", y=y, u=u, v=v)
 }
 
-Function qeedi_vert(clip input, clip "mclip", bool "Y", bool "U", bool "V", float "alpha", float "beta", float "gamma", int "nrad", int "mdis", 
-\                              bool "hp",  int "threads", int "vcheck", float "vthreshmul", float "vthresh2", bool "splinesclip")
+Function tdeflate(clip src, int "y", int "u", int "v")
 {
-    Y        = Default(Y,        True   )
-    U        = Default(U,        False  )
-    V        = Default(V,        False  )
-    yy = (Y) ? 3 : 1
-    uu = (U) ? 3 : 1
-    vv = (V) ? 3 : 1
-    mclip    = Default(mclip,    Undefined())
-    vthreshmul  = Default(vthreshmul, 1)
-    splinesclip = Default(splinesclip, False)
-    vthresh0 = vthreshmul*32
-    vthresh1 = vthreshmul*64
-    input
-    splinex2 = dither_convert_8_to_16().dither_resize16(width(),height()*2,src_top = 0.25, y=yy, u=uu, v=vv).ditherpost(mode=-1)
-    cubicx2 = bicubicresize(width(),height()*2,src_top = 0.25)
-    sclip = splinesclip ? splinex2 : cubicx2
-    edi = eedi3(1, True, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, mclip=mclip, threads=threads,
-        \     vcheck=vcheck, vthresh0=vthresh0, vthresh1=vthresh1, vthresh2=vthresh2, sclip = sclip)
-    newfield_sclip = sclip.AssumeBFF().separatefields().selecteven()
-    newfield_eedi3 = edi.AssumeBFF().separatefields().selecteven()
-    edied = mt_logic(newfield_sclip, newfield_eedi3, "xor", y=yy, u=uu, v=vv)
-    edi_halved = edi.Dither_convert_8_to_16().dither_resize16nr(width(),height(), src_top = -0.5, y=yy, u=uu, v=vv).ditherpost(mode=-1, y=yy, u=uu, v=vv)
-    edi_halved = last.mt_merge(edi_halved, edied.bilinearresize(width(),height(), src_top = -0.5).mt_binarize(0, y=yy, u=uu, v=vv))
-    return edi_halved
+    src
+    prev = Trim(0,-1)++Trim(0, FrameCount-2)
+    next = Trim(1, FrameCount-1)++Trim(FrameCount-1,FrameCount-1)
+    try
+    {
+        avg = RAverageW(prev, 0.5, next, 0.5, y=y, u=IsY8()?1:u, v=IsY8()?1:v)
+    }
+    catch(err_msg)
+    {
+        avg = mt_average(prev, next, y=y, u=u, v=v)
+    }
+    return last.mt_logic(avg, "min", y=y, u=u, v=v)
 }
-
-Function qeedi(clip input, clip "mclip", bool "Y", bool "U", bool "V", float "alpha", float "beta", float "gamma", int "nrad", int "mdis", 
-\                              bool "hp",  int "threads", int "vcheck", float "vthreshmul", float "vthresh2", bool "splinesclip")
-{
-    input
-    TurnRight()
-    mclipR = IsClip(mclip) ? mclip.TurnRight() : Undefined()
-    qeedi_vert(last, mclipR, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, threads, vcheck, vthreshmul, vthresh2, splinesclip)
-    TurnLeft()
-    qeedi_vert(last, mclip, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, threads, vcheck, vthreshmul, vthresh2, splinesclip)
-    return last
-}
-
-Function RFSR_Process_mappings_pair(string str, int frame)
-{
-     n = Chr(10)
-     split = str.FindStr(" ")
-     str = (split==1) ? str.RightStr(str.StrLen()-1) : str
-     split = str.FindStr(" ")
-     l = eval(str.LeftStr(split-1)) 
-     r = eval(str.RightStr(str.StrLen()-split))
-     map = "["+string(frame)+" "+string(frame+r-l)+"]"+"["+string(l)+" "+string(r)+"]"+n
-     frame = frame+r-l+1
-     return map+";"+string(frame)
-}
-Function RFSR_Process_mappings_single(string str, int frame)
-{ 
-    n = Chr(10)
-    a = str.FindStr(" ")
-    t = (a>0) ? eval(str.LeftStr(a)) : eval(str)
-    map = (IsInt(t)) ? string(frame) + " " + string(t) + n : ""
-    frame = IsInt(t) ? frame+1 : frame
-    return (a>0) ? map + RFSR_Process_mappings_single(str.RightStr(str.StrLen()-a), frame) : map+";"+string(frame)
-}
-
-Function  RFSR_Process_mappings(string mappings, int frame)
-{
-    l = mappings.FindStr("[")
-    r = mappings.FindStr("]")
-    map = (l>1) ? RFSR_Process_mappings_single(mappings.LeftStr(l-1), frame)
-    \     : (l==1) ? RFSR_Process_mappings_pair(mappings.MidStr(l+1, r-l-1), frame)
-    \                 :  RFSR_Process_mappings_single(mappings, frame)
-    sc = map.FindStr(";")
-    frame = eval(map.RightStr(map.StrLen()-sc))
-    map = map.LeftStr(sc-1)
-    r = (l>1) ? l-1 : r
-    return (l<=0) ? map+";"+string(frame) : map+RFSR_Process_mappings(mappings.RightStr(mappings.StrLen()-r), frame)
-}
-Function RemapFramesSimpleR(clip a, string "mappings")
-{
-    mappings = Default(mappings+" ", "").str_dedouble(" ")
-    mappings = RFSR_Process_mappings(mappings, 0)
-    sc = mappings.FindStr(";")
-    frames = eval(mappings.RightStr(mappings.StrLen()-sc))
-    mappings= mappings.LeftStr(sc-1)
-    a = (a.FrameCount()<frames) ? a.LengthenClip(frames) : a
-    a = RemapFrames(a, mappings = mappings)
-    return (a.FrameCount()>frames) ? a.Trim(0, frames-1) : a
-}
-
 
 Function tblur(clip src, int "y", int "u", int "v", bool "lsb_in", bool "lsb")
 {
     lsb_in = Default(lsb_in, false)
     lsb = Default(lsb, false)
+    src
+    prev = Trim(0,-1)++Trim(0, FrameCount-2)
+    next = Trim(1, FrameCount-1)++Trim(FrameCount-1,FrameCount-1)
     try
     {
-        src
-        prev = Trim(0,-1)++Trim(0, FrameCount-2)
-        next = Trim(1, FrameCount-1)++Trim(FrameCount-1,FrameCount-1)
-        RAverageW(src, 0.5, prev, 0.25, next, 0.25, y=y, u=u, v=v, lsb_in = lsb_in, lsb_out = lsb)
+        RAverageW(prev, 0.25, src, 0.5, next, 0.25, y=y, u=(Undefined(u)&&IsY8())?1:u, v=(Undefined(v)&&IsY8())?1:v, lsb_in = lsb_in, lsb_out = lsb)
     }
     catch(err_msg)
     {
         (!lsb_in && lsb) ? src.To16() : src
-        prev = Trim(0,-1)++Trim(0, FrameCount-2)
-        next = Trim(1, FrameCount-1)++Trim(FrameCount-1,FrameCount-1)
         average16(prev, next, y=y, u=u, v=v).average16(last, y=y, u=u, v=v)
         lsb ? last : ditherpost(mode = -1)
         (lsb || lsb_in) ? last : mt_average(prev, next, y=y, u=u, v=v).mt_average(src, y=y, u=u, v=v)
@@ -696,69 +720,111 @@ function Rsum(clip src, int range)
     return (range == 1) ? src : dither_add16(src.trim(0,src.FrameCount() - range), Rsum(src.trim(1,0), range-1), u=3, v=3) 
 }
 
-Function box8(clip src, int "radius", int "radius2", int "radius3", int "y", int "u", int "v", int "mode")
+Function qeedi_vert(clip input, clip "mclip", bool "Y", bool "U", bool "V", float "alpha", float "beta", float "gamma", int "nrad", int "mdis", 
+\                              bool "hp",  int "threads", int "vcheck", float "vthreshmul", float "vthresh2", bool "splinesclip", bool "revert")
 {
-    mode = Default(mode, -1)
-    box = src.Dither_convert_8_to_16().Dither_box_filter16(radius=radius, y=y, u=u, v=v)
-    box = Defined(radius2) ? box.Dither_box_filter16(radius=radius2, y=y, u=u, v=v) : box
-    box = Defined(radius3) ? box.Dither_box_filter16(radius=radius3, y=y, u=u, v=v) : box
-    return (mode<-1) ? box.dither_get_msb() : box.ditherpost(mode = mode, y=y, u=u, v=v)
+    Y        = Default(Y,        True   )
+    U        = Default(U,        False  )
+    V        = Default(V,        False  )
+    yy = (Y) ? 3 : 1
+    uu = (U) ? 3 : 1
+    vv = (V) ? 3 : 1
+    mclip    = Default(mclip,    Undefined())
+    vthreshmul  = Default(vthreshmul, 1)
+    splinesclip = Default(splinesclip, False)
+    revert = Default(revert, False)
+    vthresh0 = vthreshmul*32
+    vthresh1 = vthreshmul*64
+    input
+    splinex2 = dither_convert_8_to_16().dither_resize16(width(),height()*2,src_top = 0.25, y=yy, u=uu, v=vv).ditherpost(mode=-1)
+    cubicx2 = bicubicresize(width(),height()*2,src_top = 0.25)
+    sclip = splinesclip ? splinex2 : cubicx2
+    edi = eedi3(1, True, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, mclip=mclip, threads=threads,
+    \                vcheck=vcheck, vthresh0=vthresh0, vthresh1=vthresh1, vthresh2=vthresh2, sclip = sclip)
+    newfield_sclip = sclip.AssumeBFF().separatefields().selecteven()
+    newfield_eedi3 = edi.AssumeBFF().separatefields().selecteven()
+    edied = mt_logic(newfield_sclip, newfield_eedi3, "xor", y=yy, u=uu, v=vv)
+    edi_halved = edi.Dither_convert_8_to_16().dither_resize16(width(),height(), src_top = -0.5, y=yy, u=uu, v=vv).ditherpost(mode=-1, y=yy, u=uu, v=vv)
+    return revert ? input.mt_merge(edi_halved, edied.bilinearresize(width(),height(), src_top = -0.5).mt_binarize(0, y=yy, u=uu, v=vv))
+    \             : edi_halved
+    #return edi.interleave(sclip)
 }
 
-Function quote(string s)
+Function qeedi(clip input, clip "mclip", bool "Y", bool "U", bool "V", float "alpha", float "beta", float "gamma", int "nrad", int "mdis", 
+\                              bool "hp",  int "threads", int "vcheck", float "vthreshmul", float "vthresh2", bool "splinesclip", bool "revert")
 {
-    return chr(34)+s+chr(34)
+    input
+    TurnRight()
+    mclipR = IsClip(mclip) ? mclip.TurnRight() : Undefined()
+    qeedi_vert(last, mclipR, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, threads, vcheck, vthreshmul, vthresh2, splinesclip, revert)
+    TurnLeft()
+    qeedi_vert(last, mclip, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, threads, vcheck, vthreshmul, vthresh2, splinesclip, revert)
+    return last
 }
 
-Function logicdownscale_makeexpr(int i, int n, string mode, int u, int v)
+Function IsByte(int a)
 {
-    ilogic = ".mt_logic(s.selectevery("+string(n)+","+string(i)+"), "+quote(mode)+", u="+string(u)+", v="+string(v)+")"
-    return (i==0) ? "s.selectevery("+string(n)+")" : logicdownscale_makeexpr(i-1, n, mode, u, v)+ilogic
+    return (0 <= a) and (a <= 255)
 }
 
-Function logicdownscale_v(clip src, int "n", string "mode", int "u", int "v", bool "vert")
+Function Credmask_Bmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3", bool "soft", bool "inv")
 {
-    n = Default(n, 2)
-    mode = Default(mode, "max")
-    u = Default(u, 3)
-    v = Default(v, 3)
-    vert = Default(vert, true)
-    h = vert ? src.Height : src.Width
-    mod = (src.IsYV12 || src.isYV16 && !vert) ? 2 : 1
-    neutral = (mode=="max" || mode == "or" || mode == "xor") ? $000000 : $FFFFFF
-    pad = vert ? src.Blankclip(height=mod*n - h%(mod*n), color_yuv=neutral).trim(0,-1).loop(src.FrameCount())
-\               : src.Blankclip(width=mod*n - h%(mod*n), color_yuv=neutral).trim(0,-1).loop(src.FrameCount())
-    src = (h%(n*mod)==0) ? src : vert ? src.StackVertical(pad) : src.StackHorizontal(pad)
-    s = vert ? src.separaterows(n) : src.separatecolumns(n)
-    exp = logicdownscale_makeexpr(n-1, n, mode, u, v)
-    return Eval(exp)
+    inv = Default(inv, false)
+    BExp1 = Default(BExp1, 0)
+    BExp2 = Default(BExp2, 0)
+    BExp3 = Default(BExp3, 0)
+    BThr1 = Default(BThr1, 0)
+    BThr2 = Default(BThr2, 0)
+    BThr3 = Default(BThr3, 0)
+    soft = Default(soft, false)
+    src = inv ? src.mt_expand_oct(BExp1) : src.mt_inpand_oct(BExp1)
+    m1 = soft ? src.mt_shiftnmul(BThr1, 128, 4, upper=!inv) : src.mt_binarize(BThr1, !inv)
+    #if (BExp2>BExp1)
+    #{
+        src = inv ? src.mt_expand_ss(BExp2-BExp1+1, prer=1, subspl = 3)
+\                 : src.mt_inpand_ss(BExp2-BExp1+1, prer=1, subspl = 3)
+        m2 = soft ? src.mt_shiftnmul(BThr2, 128, 6, upper=!inv) : src.mt_binarize(BThr2, !inv)
+        BExp3 = (BExp3-BExp2)/3-1
+        #if (BExp3>0)
+        #{
+            src = inv ? src.mt_expand_ss(BExp3, prer=1, subspl = 3)
+\                     : src.mt_inpand_ss(BExp3, prer=1, subspl = 3)
+            m3 = soft ? src.mt_shiftnmul(BThr3, 128, 8, upper=!inv) : src.mt_binarize(BThr3, !inv)
+            m3 = m3.desusample(m2.Width, m2.Height, 3, point =false)
+            m23 = IsByte(BThr2) ? mt_logic(m2, m3, soft ? "min" : "and") : m3
+        #}
+        m2 = (BExp3>0) ? m23 : m2
+        m2 = m2.desusample(m1.Width(), m1.Height(), 3, point =false)
+        m12 = IsByte(BThr1) ? mt_logic(m1, m2, soft ? "min" : "and") : m2
+    #}
+    m1 = (BExp2>BExp1) ? m12 : m1
+    return m1
 }
 
-Function logicdownscale(clip src, int "n", string "mode", int "u", int "v", bool "turn")
+function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3"
+\                                  , int "WThr1", int "WExp1", int "WThr2", int "WExp2", int "WThr3", int "WExp3"
+\                                  , int "CThr1", int "CExp1", int "CThr2", int "CExp2", int "CThr3", int "CExp3", int "u", int "v"
+\                                  , int "EThr1", int "EExp1", int "EThr2", int "EExp2", int "EThr3", int "EExp3", bool "soft")
 {
-    turn = Default(turn, false)
-    return turn ? src.logicdownscale_v(n, mode, u, v).turnLeft().logicdownscale_v(n, mode, u, v).turnright()
-\               : src.logicdownscale_v(n, mode, u, v).logicdownscale_v(n, mode, u, v, true)
-}
-
-Function pelclip(clip src, bool "lsb")
-{
-    src
-    y = converttoy8().LanczosResize (width*2, height*2, src_left=0.25, src_top=0.25)
-    u = utoy8().LanczosResize (width, height, 0.25, 0.25)
-    v = vtoy8().LanczosResize (width, height, 0.25, 0.25)
-    return Default(lsb, false) ? dither_resize16(width*2, height, kernel="lanczos", center = false) : ytouv(u,v,y)
-}
-
-Function minmotion(clip src, string "post", int "u", int "v")
-{
-    post = Default(post, "")
-    u = Default(u, 3)
-    v = Default(v, 3)
-    prev = mt_makediff(src, src.selectevery(1, -1), u=3, v=3)
-    next = mt_makediff(src, src.selectevery(1, 1), u=3, v=3)
-    minabs = mt_lutxy(next, prev, "x 128 - abs y 128 - abs min "+post, u=3, v=3)
-    return minabs
+    BThr1 = Default(BThr1, 0)
+    WThr1 = Default(WThr1, 0)
+    CThr1 = Default(CThr1, 0)
+    EThr1 = Default(EThr1, 0)
+    soft = Default(soft, false)
+    uc = Default(u, 128).string()
+    vc = Default(v, 128).string()
+    y = src.converttoy8()
+    u = src.IsY8 ? src : src.UtoY8()
+    V = src.IsY8 ? src : src.VtoY8()
+    b = y.Credmask_Bmask(BThr1, BExp1, BThr2, BExp2, BThr3, BExp3, soft)
+    w = y.Credmask_Bmask(WThr1, WExp1, WThr2, WExp2, WThr3, WExp3, soft, inv=true)
+    c = mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +").Credmask_Bmask(CThr1, CExp1, CThr2, CExp2, CThr3, CExp3, soft).Cx2()    
+    e = y.mt_edge("min/max", 0,255).Credmask_Bmask(EThr1, EExp1, EThr2, EExp2, EThr3, EExp3, soft, inv=true)
+    w = (WThr1!=0) ? w : y.mt_lut(y=0)
+    wb = (BThr1!=0) ? ((WThr1!=0) ? mt_logic(w,b,"min") : b) : w
+    wbc = (CThr1!=0) ?  mt_logic(wb,c,"min") : wb
+    wbce = (EThr1!=0) ? mt_logic(wbc,e,"min") : wbc
+    return wbce
 }
 
 Function SMoothD2yuv(clip src, int "quant", int "num_shift", int "Matrix", int "Qtype", int "ZW",  int "ncpu")
@@ -783,6 +849,24 @@ Function SD2_preset(clip src, int "strength", int "num_shift", bool "display")
     return (strength < 0) ? src : db
 }
 
+Function shiftcolor(clip src, clip ref, int "block", bool "doublechroma")
+{
+    w = src.Width()
+    h = src.Height()
+    ss = Default(block, 4)
+    csp = Default(doublechroma, true) ? "YV12" : "YV24"
+    ssf = float(ss)
+    nw = w/(2*ss)*2
+    nh = h/(2*ss)*2
+    pw = w%(2*ss)
+    ph = h%(2*ss)   
+    down = src.nnedi3_resize16(nw, nh, 0, 0, w+pw, h+ph, kernel_d="box", output=csp, cplace="MPEG1", lsb=true)
+    ref = ref.nnedi3_resize16(nw, nh, 0, 0, w+pw, h+ph, kernel_d="box", output=csp, cplace="MPEG1", lsb=true)
+    diff = dither_sub16(ref, down, u=3, v=3, dif=true)
+    \     .nnedi3_resize16(w, h, 0, 0, w/ssf, h/ssf, kernel_u="linear", ratiothr=1024, output="YV12", cplace="MPEG1", lsb_in=true, lsb=true)
+    corrected = src.mt_adddiff(diff.Dither_box_filter16(radius=6).dither_removegrain16(12).ditherpost(mode=-1, ampn=1), u=3, v=3)
+    return corrected
+}
 
 #nnedimode is either 0/1 (like in nnedi, TFF assumed) or -1/1 to use prev/next frame
 Function UDMC(clip src,  clip "anclip", int "sad", bool "isb", bool "dct", bool "display")
@@ -804,9 +888,10 @@ Function UDMC(clip src,  clip "anclip", int "sad", bool "isb", bool "dct", bool 
     return merged
 }
 
-Function BDMC(clip src,  clip "anclip", int "sad", bool "dct", bool "display")
+Function BDMC(clip src,  clip "anclip", clip "colorclip", int "sad", bool "dct", bool "display")
 {
     an = Default(anclip, src)
+    colorclip = Default(colorclip, an)
     sad = Default(sad, 100)
     dct = Default(dct, false)
     display = Default(display, false)
@@ -820,6 +905,8 @@ Function BDMC(clip src,  clip "anclip", int "sad", bool "dct", bool "display")
     fmask = mmask(src,f,kind=1, ml=sad, Ysc=255)
     bcomp = MCompensate(src, super, b, thsad=10000)
     fcomp = MCompensate(src, super, f, thsad=10000)
+    bcomp = shiftcolor(bcomp, colorclip)
+    fcomp = shiftcolor(fcomp, colorclip)
     fmask = fmask.converttoy8().mt_expand()
     bmask = bmask.converttoy8().mt_expand()
     fbmask = mt_lutxy(fmask, bmask, "y x - x y + 24 max * 20 / 128 +")

@@ -8,14 +8,16 @@ By default, script just shifts error from [+0..+128]\(on 16 bit scale) range to 
 Pass a clip downscaled with Dither_resize16 to completely fix gradients or use iter=true (stolen from a certain encoder's blog) for actually precise debicubic at half speed 
 ###Mdenoise
 Simple MDegrain wrapper. Disable cachesuper if you want to use backward seeking.
+
+If altsad is defined then Mdenoise returns two interleaved clips: even frames are result of denoising with "sad", odd frames - "altsad".
 ###MoreFun
-modified gradfun3 with following changes (not tested well)
+modified gradfun3 with following changes (not tested well):
 *different defaults: smode=2, lsb=lsb_in=true
 *thr_edg removed
 *removegrain instead of Dither_removegrain_emul because rgtools works with all colorspaces
 *optional maskclip, merged with internal rangemask
-*optional chroma rangemasking (chromamask=true to mask chroma with chroma-based mask mixedmask=true to merge chroma-based and luma-based masks)
-*optional blur with big radius and big rangemask(bigmode=0 for Dither_smoothgrad, bigmode>1 for Dither_Bilateral and mask computed with pseudo (8+log(bigmode)) precision)
+*optional chroma rangemasking (chromamask=true to mask chroma with chroma-based mask, mixedmask=true to merge chroma-based and luma-based masks)
+*optional blur with big radius and big rangemask(bigmode=0 for Dither_smoothgrad, bigmode>1 for Dither_Bilateral and mask computed with pseudo (8+log(bigmode))-bit precision)
 *debug=2 shows clip after blurring with big radius, debug=1 stacks usual small radius rangemask with the big one
 ##shortcuts.avsi
 Some shortcuts. Used by some scripts from MoreFun.avsi
@@ -30,10 +32,10 @@ Parameters:
  * Lines are ordered by distance from border with last line being the nearest one.
  * Example: "100.8: 110.3 110 90" will brighten line nearest to border and darken two next ones.
  * Optionally you can specify values for chroma in similar way after semicolon: "A:B1 B2;C:D1 D2"
- * You can also add d[number] after list of values to throw away data from [number] last lines instead of trying to fix them. Data will be copued from next line
+ * You can also add d[number] after list of values to throw away data from [number] last lines instead of trying to fix them. Data will be copied from next line
  * Stare intensely on frame borders with high luma/chroma values on flat area to get best values.
  * Sample usage: frame should be completely (235) white, but top line has luma value 180, second is 200 third is 240. Specify t="235: 240 200 180" to fix that or t="235: 240 200 180d1" if you think last line can't be fixed properly
- * block "A:B1 B2 B3 B4 B5 B6" may be omited, for instance ";100:50" will only process chroma, "d1;d1" will mirror last luma and last chroma line
+ * block "A:B1 B2 B3 B4 B5 B6" may be omitted, for instance ";100:50" will only process chroma, "d1;d1" will mirror last luma and last chroma line (same as FillMargins plugin)
 * int edge (8) - number of lines to crop and process
 * int zero (16) - luma value shift before/after multiplication, 16 is usually fine on tv-range stuff
 * float gauss_a1 (100) - strength of post-process blur, more means less blur, set to 100 or more to disable 
@@ -45,7 +47,7 @@ awarpsharp2 wrapper with additional features.
 
 Works with any planar YUV colorspaces, usage of non-square pixels is discouraged.
 
-Requires Dither package and a certain awarpsharp2 build.
+Requires Dither package and a recent awarpsharp2 build by Firesledge http://forum.doom9.org/showpost.php?p=1751543&postcount=79
 
 Parameters:
 
@@ -76,6 +78,3 @@ Parameters:
   *  Strength of the final warping of chroma planes. Negative values result in warping in opposite direction.
 * lsb: 16bit stacked input and output
 * cplace: chroma placement "MPEG2"(default) or "MPEG1"
-
-##awarpsharp2-2015.04.06.zip
-awarpsharp2 build required by awarpsharp16

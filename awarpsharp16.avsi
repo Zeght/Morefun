@@ -42,38 +42,28 @@ function awarpsharp16(clip src, int "thresh", int "blur", int "type", int "depth
     lsb = Default(lsb, true)
     cplace = UCase(Default(cplace, "MPEG2"))
     Assert(cplace == "MPEG2" || cplace == "MPEG2", "awarpsharp16: unknown colorplacing "+cplace)
-    cshift = (cplace=="MPEG1") ? 0 : IsYV411 ? -1.5 : -0.5
+    cshift = (cplace=="MPEG1") ? 0 : -0.5
 
     src8 = (lsb) ? src.ditherpost(mode=-1) : src
-    if ((chroma != 4 && chroma !=6 || IsYV24 || cshift==0) && chroma!=-1)
-    {
-        return lsb ? src.adddiff16_8_8(src8.awarpsharp2(thresh, blur, type, depth, chroma, depthC), src8, u=3, v=3)
-\                     : awarpsharp2(src, thresh, blur, type, depth, chroma, depthC)
-    }
-    else
-    {
+    #if (chroma!=-1)
+    #{
+        direct = lsb ? src.adddiff16_8_8(src8.awarpsharp2(thresh, blur, type, depth, max(0, chroma), depthC, cplace), src8, u=3, v=3)
+        \            : awarpsharp2(src, thresh, blur, type, depth, max(0, chroma), depthC, cplace)
+    #}
+    #else
+    #{
         y8 = src8.ConvertToY8()
         u8 = src8.UtoY8
         v8 = src8.VtoY8
         sobel = y8.asobel(thresh = thresh, chroma=1)
-        if (chroma == -1)
-        {
-            blurC  = IsYV24 ? blur : (blur+1)/2
-            y8warp = y8.awarpsharp2(thresh=thresh, blur=blur, type=type, depth=depthY, chroma=1)
-            sobel = IsYV24 ? sobel : sobel.BilinearResize(u8.Width, u8.Height, src_left=cshift)
-            u8warp = Guidedwarp(u8, sobel, thresh, blurC, type, depthC)
-            v8warp = Guidedwarp(v8, sobel, thresh, blurC, type, depthC)
-        }
-        else
-        {
-            sobel = sobel.ablur(blur = blur, type=type, chroma=1)
-            y8warp = (chroma == 4) ? y8.awarp(sobel, depth=depthY, chroma=1) : y8
-            sobel = sobel.BilinearResize(u8.Width, u8.Height, src_left=cshift)
-            u8warp= u8.awarp(sobel, depth=depthC, chroma=1)
-            v8warp= v8.awarp(sobel, depth=depthC, chroma=1)
-        }
+        blurC  = IsYV24 ? blur : (blur+1)/2
+        y8warp = y8.awarpsharp2(thresh=thresh, blur=blur, type=type, depth=depthY, chroma=1)
+        sobel  = (IsYV24) ? sobel : sobel.BilinearResize(u8.Width, u8.Height, src_left=cshift)
+        u8warp = Guidedwarp(u8, sobel, thresh, blurC, type, depthC)
+        v8warp = Guidedwarp(v8, sobel, thresh, blurC, type, depthC)
         res8 = YtoUV(u8warp, v8warp, y8warp)
-        res16 = src.adddiff16_8_8(res8, src8, y=(chroma != 6) ? 3 : 2, u=3, v=3)
-        return (lsb) ? res16 : res8
-    }
+        res16 = src.adddiff16_8_8(res8, src8, u=3, v=3)
+        res = (lsb) ? res16 : res8
+    #}
+    return (chroma==-1) ? res : direct()
 }

@@ -65,5 +65,5 @@ function awarpsharp16(clip src, int "thresh", int "blur", int "type", int "depth
         res16 = src.adddiff16_8_8(res8, src8, u=3, v=3)
         res = (lsb) ? res16 : res8
     #}
-    return (chroma==-1) ? res : direct()
+    return (chroma==-1) ? res : direct
 }

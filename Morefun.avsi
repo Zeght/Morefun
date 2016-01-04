@@ -352,46 +352,52 @@ function Dfttest_ss(clip src, int "subspl", bool "Y", bool "U", bool "V", int "f
         return dither_add16(src, diff, dif = true, y=Y?3:2, u=U?3:2,v=V?3:2)
 }
 
-Function MDegrainN16(clip src, clip super, clip mv, int tr, clip "super_lsb", int "thSAD", int "thSADC", int "plane", int "limit", int "limitC", int "thSCD1", int "thSCD2", bool "isse", bool "planar", bool "lsb", int "thsad2", int "thsadc2", bool "mt")
+Function MDegrainN16(clip src, clip super, clip mv, int tr, clip "super_lsb", clip "lsbclip", int "thSAD", int "thSADC", int "plane", int "limit", int "limitC", int "thSCD1", int "thSCD2", bool "isse", bool "planar", bool "lsb", int "thsad2", int "thsadc2", bool "mt")
 {
     resmsb = src.MDegrainN(super, mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=true, thsad2=thsad2, thsadc2=thsadc2, mt=mt)
-    reslsb = src.MDegrainN(Default(super_lsb, super), mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=false, thsad2=thsad2, thsadc2=thsadc2, mt=mt).To16(nullmsb=true)
+    reslsb = lsbclip.MDegrainN(Default(super_lsb, super), mv, tr, thSAD=thSAD, thSADC=thSADC, plane=plane, limit=limit, limitC=limitC, thSCD1=thSCD1, thSCD2=thSCD2, isse=isse, planar=planar, lsb=false, thsad2=thsad2, thsadc2=thsadc2, mt=mt).To16(nullmsb=true)
     res16 = Defined(super_lsb) ? resmsb.dither_add16(reslsb, u=3, v=3) : resmsb
     return lsb ? res16 : res16.ditherpost(mode=6)
 }
 
 Function Mdenoise(clip src, clip "anclip", int "pel", int "trad", int "sad", int "sadc",
-\                int "altsad", int "limit", clip "super", clip "super_an", bool "cachesuper", bool "lsb_in", bool "lsb")
+\                int "altsad", int "limit", clip "super", clip "super_an", bool "cache", bool "lsb_in", bool "lsb")
 {
     sad  = Default(sad, 200)
     sadc = Default(sadc, sad)
+    altsad = Default(altsad, sad)
+    altsadc = altsad*sadc/sad
     tr   = Default(trad, 5)
     pel  = Default(pel, 2)
     lsb  = Default(lsb, true)
     lsb_in = Default(lsb_in, false)
-    cachesuper = Default(cachesuper, true)
+    cache = Default(cache, true)
+    src = cache ? src.requestlinear(clim=tr*3+3, elim=tr*2+2) : src
     # 16bit stuff
     pelclip16 = pelclip(src, true)
     pelmsb = pelclip16.dither_get_msb()
     pellsb = pelclip16.dither_get_lsb()
     lsbclip = lsb_in ? src.dither_get_lsb : src
     src = lsb_in ? src.dither_get_msb : src
+    lsbclip = lsbclip.requestlinear(clim=tr*2+3, elim=tr*2+2)
     # Defaults, super clips, caching
     anclip   = Default(anclip, lsb_in ? src : src.removegrain(12))
+    #anclip = (cache && anclip!=src) ? src.requestlinear(clim=tr*3+3, elim=tr*2+2) : anclip
     super_an = Default(super_an, anclip.MSuper (pel=pel, pelclip=((lsb_in && anclip==src) ? pelmsb : Undefined())))
-    super_an = cachesuper ? super_an.requestlinear(clim=tr*2+3, elim=tr+2) : super_an
+    super_an = cache ? super_an.requestlinear(clim=tr*2+3, elim=tr+2) : super_an
     default_super = src.MSuper (pel=pel, levels=1, pelclip=(lsb_in ? pelmsb : Undefined()))
     super = Default(super, (anclip==src) ? super_an 
-    \                                    : cachesuper ? default_super.requestlinear(clim=tr*2+3, elim=tr+2) : default_super)
+    \                                    : cache ? default_super.requestlinear(clim=tr*2+3, elim=tr+2) : default_super)
     super_lsb = !lsb_in ? Undefined() : lsbclip.MSuper (pel=pel, levels=1, pelclip=pellsb)
-    super_lsb = !lsb_in ? Undefined() : cachesuper ? super_lsb.requestlinear(clim=tr*2+3, elim=tr+2) : super_lsb
+    super_lsb = !lsb_in ? Undefined() : cache ? super_lsb.requestlinear(clim=tr*2+3, elim=tr+2) : super_lsb
     # Motion analysis
     mv32 = super_an.MAnalyse (delta=tr, multi=true, overlap=4, blksize=32, pzero=300)
     mv8 = super_an.MRecalculate (mv32, tr=tr, thsad=sad*2/3, overlap=2, blksize=8)
+    mv8 = cache ? mv8.requestlinear(clim=tr*2+3, elim=tr*2+1) : mv8
     # Degrain
-    deg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
-    altdeg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, thSAD=Default(100, altsad), thSAD2=Default(100, altsad)*2/3, lsb=lsb, limit=limit)
-    deg = !Defined(altsad) ? deg : interleave(deg, altdeg)
+    deg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, lsbclip=lsbclip, thSAD=sad, thSAD2=sad*2/3, thSADC=sadC, thSADC2=sadC*2/3, lsb=lsb, limit=limit)
+    altdeg = src.MDegrainN16(super, mv8, tr, super_lsb=super_lsb, lsbclip=lsbclip, thSAD=altsad, thSAD2=altsad*2/3, thSADC=altsadc, thSADC2=altsadc*2/3, lsb=lsb, limit=limit)
+    deg = (sad==altsad) ? deg : interleave(deg, altdeg)
     return deg
 }
 

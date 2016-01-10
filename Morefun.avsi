@@ -401,16 +401,17 @@ Function Mdenoise(clip src, clip "anclip", int "pel", int "trad", int "sad", int
     return deg
 }
 
-Function Debicubic16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "iter")
+Function Debicubic16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "iter", bool "chroma")
 {
+    chroma = Default(chroma, true)
     src.Debicubic16_internal(target_width, target_height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height,
-\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, chroma=true, iter=iter)
+\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, chroma=chroma, iter=iter)
 }
 
-Function DebicubicY16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "Y8", bool "iter")
+Function DebicubicY16(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "iter", bool "Y8")
 {
     src.Debicubic16_internal(target_width, target_height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height,
-\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, Y8=Y8, chroma=true, iter=iter)
+\                         lsb_inout=lsb_inout, b=b, c=c, downscaled=downscaled, pp_only=pp_only, Y8=Y8, chroma=false, iter=iter)
 }
 Function Debicubic16_internal(clip src, int target_width, int target_height, float "src_left", float "src_top", float "src_width", float "src_height", bool "lsb_inout", float "b", float "c", clip "downscaled", bool "pp_only", bool "Y8", bool "chroma", bool "iter")
 {
@@ -494,7 +495,7 @@ Function lutspa_whitebox(int "x1", int "y1", int "x2", int "y2", int "inflate", 
     exp = Defined(x2) ? exp + "min  " : exp
     exp = Defined(y1) ? exp + "min  " : exp
     exp = Defined(y2) ? exp + "min  " : exp
-    exp = exp.LeftStr(StrLen(exp)-5)+string(gr)+" * 0 max 255 min "
+    exp = (exp=="") ? "255" : exp.LeftStr(StrLen(exp)-5)+string(gr)+" * 0 max 255 min "
     return exp
 }
 
@@ -868,50 +869,66 @@ Function shiftcolor(clip src, clip ref, int "block", bool "doublechroma")
 }
 
 #nnedimode is either 0/1 (like in nnedi, TFF assumed) or -1/1 to use prev/next frame
-Function UDMC(clip src,  clip "anclip", int "sad", bool "isb", bool "dct", bool "display")
+Function UDMC(clip src,  clip "anclip", clip "cleanclip", int "sad", int "colorize", bool "isb", bool "dct", bool "display")
 {
-    an = Default(anclip, src)
-    sad = Default(sad, 100)
+    basesad = Default(sad, 100)
+    colorize = Default(colorize, 0)
+    anclip = Default(anclip, src)
+    an = Default(cleanclip, anclip)
     dct = Default(dct, false)
     display = Default(display, false)
-    isb = Default(isb, true)
     super_a = an.MSuper()
     super = src.MSuper(levels = 1)
-    v = manalyse(super_a, isb=isb, delta=1, blksize=32, overlap=0, pglobal=200, pzero=200, lambda=500, searchparam=16)
-    v = mrecalculate(super_a, v, blksize=8, overlap=4, pnew=20, thsad=sad/3, lambda=500, smooth=0, dct=dct?1:0)
-    comp = MCompensate(src, super, v, thsad=10000)
-    mask = mmask(src, v,  kind=1, ml=sad).converttoy8()
-    mask = mask.mt_lut("x 15 - 0 max 240 / 2 ^ 1000 *", u=3, v=3).mt_expand().mt_inflate().mt_inflate()
-    merged = comp.mt_merge(src, mask, luma=true,u=3,v=3)
-    merged = display ? merged.subtitle("motion compensated from " + (isb?"next":"previous")+" frame,", y=80) : merged
+    v = manalyse(super_a, isb=isb, delta=1, blksize=32, overlap=0, pglobal=40, pzero=5, lambda=500, searchparam=16)
+    v = mrecalculate(super_a, v, blksize=8, overlap=4, pnew=10, thsad=basesad/2, lambda=500, smooth=0, dct=dct?1:0)
+    comp = MCompensate(src, super, v, thsad=500)
+    colorclip = (colorize==3 && Defined(cleanclip)) ?  cleanclip : anclip
+    comp = (colorize>1) ? shiftcolor(comp, colorclip) : comp
+    mask = mmask(src, v,  kind=1, ml=basesad).converttoy8()
+    mask = mask.mt_lut("x 15 - 0 max 240 / 2 ^ 1000 *", u=3, v=3).mt_expand().mt_expand().mt_inflate()
+    merged = comp.mt_merge(src, mask, luma=true, u=3, v=3)
+    merged = display ? merged.subtitle("motion compensated from " + (isb?"next":"previous")+" frame,", y=100) : merged
     return merged
 }
 
-Function BDMC(clip src,  clip "anclip", clip "colorclip", int "sad", bool "dct", bool "display")
+Function BDMC(clip src,  clip "anclip", clip "cleanclip", int "sad", int "colorize", bool "dct", bool "display")
 {
-    an = Default(anclip, src)
-    colorclip = Default(colorclip, an)
-    sad = Default(sad, 100)
+    basesad = Default(sad, 100)
+    colorize = Default(colorize, 2)
+    anclip = Default(anclip, src)
+    an = Default(cleanclip, anclip)
+    #sad = basesad + int(pow(mc_strength, 0.3)*7)
     dct = Default(dct, false)
     display = Default(display, false)
     super_a = an.MSuper()
     super = src.MSuper(levels = 1)
-    v = manalyse(super_a, delta=1, multi=true, blksize=32, overlap=0, pglobal=0, pzero=0, lambda=500, searchparam=16)
-    v = mrecalculate(super_a, v, blksize=8,overlap=4, pnew=20, thsad=sad/3, lambda=500, smooth=0, tr=1, dct=dct?1:0)
+    v = manalyse(super_a, delta=1, multi=true, blksize=32, overlap=0, pglobal=10, pzero=0, lambda=500, searchparam=16)
+    v = mrecalculate(super_a, v, blksize=8,overlap=4, pnew=10, thsad=basesad/3, lambda=500, smooth=0, tr=1, dct=dct?1:0)
     b=v.selecteven()
     f=v.selectodd()
-    bmask = mmask(src,b,kind=1, ml=sad, Ysc=255)
-    fmask = mmask(src,f,kind=1, ml=sad, Ysc=255)
-    bcomp = MCompensate(src, super, b, thsad=10000)
-    fcomp = MCompensate(src, super, f, thsad=10000)
-    bcomp = shiftcolor(bcomp, colorclip)
-    fcomp = shiftcolor(fcomp, colorclip)
-    fmask = fmask.converttoy8().mt_expand()
-    bmask = bmask.converttoy8().mt_expand()
+    bmask = mmask(src,b,kind=1, ml=basesad, Ysc=255)
+    fmask = mmask(src,f,kind=1, ml=basesad, Ysc=255)
+    bcomp = MCompensate(src, super, b, thsad=basesad*20)
+    fcomp = MCompensate(src, super, f, thsad=basesad*20)
+    colorclip = (colorize==3 && Defined(cleanclip)) ?  cleanclip : anclip
+    bcomp = (colorize>1) ? shiftcolor(bcomp, colorclip) : bcomp
+    fcomp = (colorize>1) ? shiftcolor(fcomp, colorclip) : fcomp
+    fmask = fmask.converttoy8().mt_expand().mt_expand()
+    bmask = bmask.converttoy8().mt_expand().mt_expand()
     fbmask = mt_lutxy(fmask, bmask, "y x - x y + 24 max * 20 / 128 +")
-    fbtosrcmask = mt_lutxy(fmask, bmask, "x y min 10 - 0 max 245 / 2 ^ 1000 *").mt_expand().mt_inflate()
     fbcomp = bcomp.mt_merge(fcomp, fbmask, luma=true,u=3,v=3)
-    merged = fbcomp.mt_merge(src, fbtosrcmask, luma=true,u=3,v=3)
-    merged = display ? merged.subtitle("bidirectional motion compensation,", y=80) : merged
+    mn = mt_logic(fmask, bmask, "min")
+    
+    #use only one frame if other looks useless
+    both = interleave(fbcomp, mn.converttoyv12())
+    selector = """m=YPlaneMedian() a=Averageluma()
+                        (m<2 && a<35) ? 0 : (m>253 && a>220) ? 1 : 2"""
+    fbcomp = fbmask.converttoyv12().ConditionalSelect(selector, bcomp, fcomp, fbcomp, show=false)
+    mn = fbmask.ConditionalSelect(selector, bmask, fmask, mn, show=false)
+    
+    script = """"""
+    fbtosrcmask = mn.mt_lut("x 10 - 0 max 245 / 2 ^ 1000 *").mt_expand().mt_inflate()
+    merged = fbcomp.mt_merge(src, fbtosrcmask, luma=true, u=3, v=3)
+    merged = display ? merged.subtitle("bidirectional motion compensation,", y=100) : merged
     return merged
 }

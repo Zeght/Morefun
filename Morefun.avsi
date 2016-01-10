@@ -450,7 +450,7 @@ Function Debicubic16_internal(clip src, int target_width, int target_height, flo
     diff = Diff16_8(src, rebic.ConvertToYV12(), u=chroma, mul=256, v=chroma).Dither_convert_8_to_16()
     assert(diff.isYV12(), string("NO"))
     diff_debic = (chroma==3) ? diff.debicubic(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
-    \                        : diff.debicubicY(target_width, target_height, src_left, src_topd, src_widthd, src_height, true, b, c)
+    \                        : diff.debicubicY(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
     diff_debic = diff_debic.ditherpost(mode = -1, u=chroma, v=chroma).dither_lut8("x 128 255 * +", u=chroma, v=chroma)
     diff_debic = Y8 ? diff_debic.ConvertToY8() : diff_debic
     debic = (iter) ? debic.dither_add16(diff_debic, dif = true, u=chroma, v=chroma) : debic

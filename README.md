@@ -12,7 +12,7 @@ lsb_in/lsb are parameters for setting 16bit input/output, same as in dither tool
 Function tries to interpolate data in msk area of diff by blurring it using ref clip as reference.
 Most of processing is done on clips subsampled with subspl factor.
 Sample usage:
-'''
+```
 #"subbed" is clip with overlayed sutitles, "clean" is clean clip with slightly alternated colors, "msk" is a blurry subtitle mask
 #This alternates color of clean clip script masks subtitles
 #"clean" and "subbed" are 16bit, "msk" is 8bit
@@ -20,8 +20,8 @@ diff = dither_sub16(subbed, clean, dif=true, u=3, v=3)
 #bilatinpaint fills msk area of diff clip with colors from outside of mask, uses clean clip as reference to know how to fill
 diff = bilatinpaint(diff, msk, clean)
 cleanshifted  = clean.dither_add16(diff, dif=true, u=3, v=3)
-merged = subbed.dither_merge16_8(cleanshifted, msk, u=3, v=3, luma=true)
-'''
+merged = subbed.dither_merge16_8(cleanshifted, msk.mt_expand(), u=3, v=3, luma=true)
+```
 
 ###Debicubic16, DebicubicY16, DebicubicY16PlusMask
 lsb output for debicubic is broken, those wrappers make it less broken.

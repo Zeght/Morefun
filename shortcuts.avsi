@@ -91,7 +91,7 @@ Function mt_inpand_sq(clip src, int "radius", int "radiusc", bool "halfchroma", 
     return src.mt_xxpand_shortcut(radius, radiusc, halfchroma, y, u, v, "square", true)
 }
 
-function Dfttest_sp(clip src, bool "Y", bool "U", bool "V", int "ftype", float "sigma", float "sigma2", float "pmin",
+function dfttest_sp(clip src, bool "Y", bool "U", bool "V", int "ftype", float "sigma", float "sigma2", float "pmin",
 \                    float "pmax", int "sbsize", int "smode", int "sosize", int "tbsize", int "tmode",
 \                    int "tosize", int "swin", int "twin", float "sbeta", float "tbeta", bool "zmean",
 \                    string "sfile", string "sfile2", string "pminfile", string "pmaxfile", float "f0beta",

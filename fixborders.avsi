@@ -64,7 +64,7 @@ function fixtopborder_generate_eval(float norm, string vals, float zero, int h)
     crop_lut = fixtopborder_generate_crop_lut(norm, vals, zero, lines)
     lineb = "src.crop(0, "+string(lines+1)+", 0, 0)"
     nolut = (lines+1==h) ? "" : ","+lineb+".interleave(Dither_gen_null_lsb("+lineb+"))"
-    assert(lines<h, "fixborders: 'border' parameter is too low, set it to "+string((lines+3)/2*2))
+    assert(lines<h, "fixborders: 'border' parameter is too low")
     stack = "Stackvertical("+lineslist(lines)+nolut+")"
     msblsb ="Stackvertical(SelectEven(), SelectOdd())"
     return "lines="+string(lines)+crop_lut + stack + msblsb

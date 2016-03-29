@@ -11,7 +11,11 @@ lsb_in/lsb are parameters for setting 16bit input/output, same as in dither tool
 ### bilatinpaint(clip diff, clip msk, clip ref, float "subspl", int "y", int "u", int "v")
 Function tries to interpolate data in msk area of diff by blurring it using ref clip as reference.
 Most of processing is done on clips subsampled with subspl factor.
+<<<<<<< HEAD
+####Sample usage:
+=======
 Sample usage:
+>>>>>>> 96f84f16402a842b0e5e9fda8fdfb86222d446c8
 ```
 #"subbed" is clip with overlayed sutitles, "clean" is clean clip with slightly alternated colors, "msk" is a blurry subtitle mask
 #This alternates color of clean clip script masks subtitles
@@ -20,7 +24,7 @@ diff = dither_sub16(subbed, clean, dif=true, u=3, v=3)
 #bilatinpaint fills msk area of diff clip with colors from outside of mask, uses clean clip as reference to know how to fill
 diff = bilatinpaint(diff, msk, clean)
 cleanshifted  = clean.dither_add16(diff, dif=true, u=3, v=3)
-merged = subbed.dither_merge16_8(cleanshifted, msk.mt_expand(), u=3, v=3, luma=true)
+merged = subbed.dither_merge16_8(cleanshifted, msk, u=3, v=3, luma=true)
 ```
 
 ###Debicubic16, DebicubicY16, DebicubicY16PlusMask
@@ -35,6 +39,37 @@ Mask is created by subtracting rescaled debicubic clip from source clip, applyin
 Subsamples image with subspl factor, performs dfttest on a subsampled picture, computes difference between result and original subsampled picture and adds difference to full-size picture.
 This allow to filter oly lower frequencies at relatively low cost.
 Works with 16bit clips only.
+
+###Framematch(clip src, clip ref, clip "msk", clip "out", int "mskmode", int "rad", string "outfile", float "subspl", float "gamma")
+Takes 2 clips with same content, similar colors, crop, but with different framenumbers. Tries to match frames rearrange frames of _src_ clip to match frames of _ref_ clip.
+
+Function compares frame from ref to nearby frames from src using Cframediff from TVIVTC (same metric as tdecimate).
+
+Runtime filters use global variables, so it's not recommended to use this script twice in same AviSynth instance.
+
+You can check history of https://gist.github.com/Zeght/89c9a763efba0b32486b for simpler versions of this script.
+* clip ref - reference clip that has frames arranged in desired way.
+* clip src - similar clip with slightly rearanged frames (e.g. misdecimated). Doesn't need to be same size as ref as it will be resized in the process.
+* clip msk (Undefined) - mask clip, masked areas wont be compared.
+* clip out (src) - clip which frames will be returned according to src->ref mappings. Can be 16-bit version of _src_, some kind of mask or stacked clips.
+* int mskmode(0) - defines if mask clip is relative to _src_ (_mskmode_=0) or _ref_ (_mskmode_=1)
+* int rad (3) - temporal radius for frames comparison/search.
+* string outfile (Undefined) - name of file to write logs. Format - lines consisting of space-separated pairs (_frame_number_, _shift_(where to get frame frame from _ref_ to get same frame as _frame_number_ from src)).
+* float subspl (width/640) - clips are subsampled by this factor and then get 8px-wide borders cropped for comparison. _subspl=0_ disables subsampling and cropping.
+* float gamma (0.05) - penalizes sudden changes in frame shift. Negative values allows for crossings/decreasing mappings which is normally not required.
+
+###Framematch_selectrangeevery(clip src, int "every", int "length", int "offset", int "mul", bool "blackpad")
+Unlike AviSynth's SelectRangeEvery this version does properly with every>length and works with negative offsets.
+
+It picks ranges [_offset_, _offset_+_length_], [_offset+every_, _offset_+_every_+_length_], [_offset+2*every_, _offset_+_2*every_+_length_] and so on.
+
+If _mul_>0 then it repeats every range described above _mul_ times.
+
+Frames that are pulled from outside of clip (with negative or too big frame numbers) are replaced by black frames if _blackpad_ is set to true (Default), otherwise it these frames are replaced by first or last frame.
+
+SelectEvery is used internally and it wont work if _length*mul_ is larger than 1023.
+
+Length of returned clip is always _src.framescount*length*mul/every_.
 
 ###HD_Edge
 A hack to compute an edge mask with bit depth higher than 8 bit. It works by taking clip lsb1 - some lower bits and lsb2 - lsb1 with values circularly shifted by 128.
@@ -52,10 +87,11 @@ mode is mt_logic mode (default - "max"), turn indicates whether clip is downscal
 Makes an expression for mt_lutspa to draw a box with corners in (x1, x2) and (y1, y2) inflated by inflate pixels.
 
 ###Mdenoise
-Simple MDegrain wrapper. Disable cachesuper if you want to use backward seeking.
+Simple MDegrain wrapper. Disable _cachesuper_ if you want to use backward seeking.
 
 If altsad is defined then Mdenoise returns two interleaved clips: even frames are result of denoising with "sad", odd frames - "altsad".
 
+With positive _blksize_ search is done with 32x32 blocks first and then refined using _blksize blocks_, negative _blksize_ results in 1-pass search with _-blksize_ blocks. Default is 8.
 ###MoreFun
 modified gradfun3 with following changes (not tested well):
 *different defaults: smode=2, lsb=lsb_in=true

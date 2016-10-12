@@ -111,7 +111,7 @@ function fixtopborder(clip src, string values, int "zero", float "a1", float "th
     return YtoUV(u, v, y)
 }
 
-function fixborders(clip src, string "l", string "t", string "r", string "b", int "border", float "zero", float "gauss_a1", float "gauss_thr", int "dith_mode")
+function fixborders(clip src, string "l", string "t", string "r", string "b", int "border", float "zero", float "gauss_a1", float "gauss_thr", int "dith_mode", string "stat_file", int "disable_thr")
 {
     e = Default(border, 8)
     zero = Default(zero, 16)
@@ -120,18 +120,46 @@ function fixborders(clip src, string "l", string "t", string "r", string "b", in
     dith_mode = Default(dith_mode, 6)
     w = src.Width()
     h = src.Height()
+    src0 = src
+    
     te = src.crop(0,0,0,e)
+    te_minmax = te.mt_edge("min/max", 0, 255, u=3, v=3)
     te = Defined(t) ? te.fixtopborder(t,zero,gauss_a1,gauss_thr,dith_mode) : te
+    te_minmax = te.mt_edge("min/max", 0, 255, u=3, v=3).mt_makediff(te_minmax, u=3, v=3)
+    
     c = src.crop(0,e,0,-e)
+    
     be = src.crop(0,h-e,0,0)
+    be_minmax = be.mt_edge("min/max", 0, 255, u=3, v=3)
     be = Defined(b) ? be.Turn180().fixtopborder(b,zero,gauss_a1,gauss_thr,dith_mode).turn180() : be
-    src = stackvertical(te,c,be)
+    be_minmax = be.mt_edge("min/max", 0, 255, u=3, v=3).mt_makediff(be_minmax, u=3, v=3)
+    
+    src = defined(t) || defined(b) ? stackvertical(te, c, be) : src
+    tb_minmax = defined(t) || defined(b) ? stackvertical(te_minmax, be_minmax).to16().dither_resize16(16, 16, kernel="linear")
+    \                                    : src.blankclip(width=16, height=16, color_yuv=$808080).to16()
+    
     le = src.crop(0,0,e,0)
+    le_minmax = le.mt_edge("min/max", 0, 255, u=3, v=3)
     le = Defined(l) ? le.TurnRight().fixtopborder(l,zero,gauss_a1,gauss_thr,dith_mode).TurnLeft() : le
+    le_minmax = le.mt_edge("min/max", 0, 255, u=3, v=3).mt_makediff(le_minmax, u=3, v=3)
+    
     c = src.crop(e,0, -e, 0)
+    
     re = src.crop(w-e, 0, 0, 0)
+    re_minmax = re.mt_edge("min/max", 0, 255, u=3, v=3)
     re = Defined(r) ? re.TurnLeft().fixtopborder(r,zero,gauss_a1,gauss_thr,dith_mode).TurnRight() : re
-    src = stackhorizontal(le,c,re)
+    re_minmax = re.mt_edge("min/max", 0, 255, u=3, v=3).mt_makediff(re_minmax, u=3, v=3)
+    
+    src = defined(l) || defined(r) ? stackhorizontal(le,c,re) : src
+    lr_minmax = defined(l) || defined(r) ? stackvertical(le_minmax, re_minmax).to16().dither_resize16(16, 16, kernel="linear")
+    \                                    : src.blankclip(width=16, height=16, color_yuv=$808080).to16()
+    
+    minmax = dither_add16(lr_minmax, tb_minmax, dif=true, u=3, v=3).dither_lut16("x 128 256 * - 8 * 128 256 * + ").ditherpost(mode=-1, ampn=1, staticnoise=true).clense()
+    
+    wr = Defined(stat_file) ? minmax.WriteFileIf(stat_file, "averageluma()>144",  "current_frame", """ " " """, "averageluma()-128") : src
+    src = Defined(disable_thr) ? minmax.ConditionalFilter(src0, src, "averageluma", ">", string(disable_thr)) : src
+    src = Defined(stat_file) ? mt_logic("xor", src, wr, y=2, u=2, v=2) : src
+    
     return src
 }
 

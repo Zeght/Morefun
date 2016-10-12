@@ -11,11 +11,8 @@ lsb_in/lsb are parameters for setting 16bit input/output, same as in dither tool
 ### bilatinpaint(clip diff, clip msk, clip ref, float "subspl", int "y", int "u", int "v")
 Function tries to interpolate data in msk area of diff by blurring it using ref clip as reference.
 Most of processing is done on clips subsampled with subspl factor.
-<<<<<<< HEAD
-####Sample usage:
-=======
+
 Sample usage:
->>>>>>> 96f84f16402a842b0e5e9fda8fdfb86222d446c8
 ```
 #"subbed" is clip with overlayed sutitles, "clean" is clean clip with slightly alternated colors, "msk" is a blurry subtitle mask
 #This alternates color of clean clip script masks subtitles
@@ -140,7 +137,7 @@ mt_xxpand_sq uses square kernel, mt_xxpand_oct uses octagonal kernel.
 ###dfttest_sp
 Spatial dfttest - dfttest with different defaults. tbsize is 1, lsb_in/lsb is true.
 
-##fixedges (fixedges.avsi)
+##fixborders (fixborders.avsi)
 Function for correcting darkened/brightened borders. Multiplies values of border lines by specified amount
 
 Requires Dither package
@@ -160,6 +157,8 @@ Parameters:
 * float gauss_a1 (100) - strength of post-process blur, more means less blur, set to 100 or more to disable 
 * float gauss_thr (1.5) - Dither_limit_dif16 threshold for post-process blur, elast = 1.5, set to 0 to disable
 * int dith_mode (6) - dither_post mode, use 2 or -1(adds random noise) if you want to avoid error diffusion between lines
+* string stat_file - if defined, writes difference of edge masks between result and input on frames where script seems to fail (wring l, t, r, b values).
+* int disable_thr - reverts image on frames where script seems to fail (144 is sane value, smaller values make it disable more)
 
 
 ##awarpsharp16 (awarpsharp16.avsi)
@@ -198,3 +197,6 @@ Parameters:
   *  Strength of the final warping of chroma planes. Negative values result in warping in opposite direction.
 * lsb: 16bit stacked input and output
 * cplace: chroma placement "MPEG2" (default) or "MPEG1"
+
+##IVTCPP (ivtcpp.avsi)
+A collection of scripts for post-processing telecined material. Required by Macron_IVTC(https://github.com/Zeght/Macron)

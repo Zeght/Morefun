@@ -4,13 +4,13 @@ Function susample(clip src, int "factor", bool "lsb")
     lsb = default(lsb, false)
     tw = (src.Width()+f-1)/f
     tw = (tw % 2 == 0) ? tw : (tw+1)
-    th16 = (src.Height()/2+f-1)/f
-    th16 = ((th16 % 2 == 0) && ! ((src.IsY8) || (src.IsYV24))) ? th16 : (th16+1)
-    th8 = (src.Height()+f-1)/f
-    th8 = ((th8 % 2 == 0) || (src.IsY8) || (src.IsYV24)) ? th8 : (th8+1)
-    useresize16 = (lsb) || (f % 2 == 0) && ((th16 % 2 == 0) && (src.Height() % 4 == 0) || (src.IsY8) || (src.IsYV24))
-    th =  useresize16 ? th16 : th8 #point is somehow faster with dither_resize16
-    return useresize16 ? src.dither_resize16(tw, th, (f-1)/2,(f-1)/2, tw*f, th*f,"point") : src.pointresize(tw, th, (f-1)/2,(f-1)/2, tw*f, th*f)
+
+
+    th = (src.Height()+f-1)/f
+    th = ((th % 2 == 0) || (!src.IsYV12)) ? th : (th+1)
+
+
+    return src.pointresize(tw, th, (f-1)/2,(f-1)/2, tw*f, th*f)
 }
 
 Function desusample(clip src, int w, int h, int "factor", bool "point")
@@ -18,8 +18,8 @@ Function desusample(clip src, int w, int h, int "factor", bool "point")
     f = default(factor, (w+src.Width()-1) / src.Width())
     point = default(point, true)
     ff = float(f)
-    point16 = (f % 2 == 0) && (src.Height()%4 == 0) && (h%4 == 0)
-    res = (!point) ? src.bilinearresize(w, h, 0, 0, w/ff, h/ff) : (point16) ? src.dither_resize16(w, h/2, 0, 0, w/ff, h/ff/2, "point"): src.pointresize(w, h, 0, 0, w/ff, h/ff)
+
+    res = (!point) ? src.bilinearresize(w, h, 0, 0, w/ff, h/ff) : src.pointresize(w, h, 0, 0, w/ff, h/ff)
     return (f == 1) ? src : res
 }
 
@@ -186,8 +186,8 @@ Function MoreFun (clip src, float "thr", int "radius", float "elast",
     thr_detc = Default (thr_detc, thr_det)
     debug   = Default (debug,        0)
     subspl  = Default (subspl,       0)
-    lsb     = Default (lsb,      true)
-    lsb_in  = Default (lsb_in,   true)
+    lsb     = Default (lsb,       true)
+    lsb_in  = Default (lsb_in,    true)
     ref     = Default (ref,        src)
     bigrad = Default(bigrad, min(91, radius * 3))
     bigmode = Default(bigmode, -1)
@@ -379,7 +379,7 @@ Function Mdenoise(clip src, clip "anclip", int "pel", bool "anchroma", int "trad
     cache = Default(cache, true)
     src = cache ? src.requestlinear(clim=tr*3+3, elim=tr*2+2) : src
     # 16bit stuff
-    pelclip16 = pelclip(src, true)
+    pelclip16 = pelclip(src, lsb_in)
     pelmsb = pelclip16.dither_get_msb()
     pellsb = pelclip16.dither_get_lsb()
     lsbclip = lsb_in ? src.dither_get_lsb : src
@@ -443,7 +443,7 @@ Function Debicubic16_internal(clip src, int target_width, int target_height, flo
     pp_only = Default(pp_only, false)
     iter = Default(iter, false)
     diffexpr = Default(diffexpr, "")
-    src = (!pp_only && !src.IsYV12) ? src.ConvertToYV12 : src
+    src = (!pp_only && !src.IsYV12) ? src.ConvertToYV12() : src
     debic = pp_only ? src 
 \                   : (chroma==3) ? src.debicubic(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
 \                                 : src.debicubicY(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
@@ -732,6 +732,9 @@ Function tdeflate(clip src, int "y", int "u", int "v")
 
 Function tblur(clip src, int "y", int "u", int "v", bool "lsb_in", bool "lsb")
 {
+    y = Default(y, 3)
+    u = Default(u, 3)
+    v = Default(v, 3)
     lsb_in = Default(lsb_in, false)
     lsb = Default(lsb, false)
     src
@@ -739,6 +742,7 @@ Function tblur(clip src, int "y", int "u", int "v", bool "lsb_in", bool "lsb")
     next = Trim(1, FrameCount-1)++Trim(FrameCount-1,FrameCount-1)
     try
     {
+        assert(!IsYV24)
         RAverageW(prev, 0.25, src, 0.5, next, 0.25, y=y, u=IsY8()?1:u, v=IsY8()?1:v, lsb_in = lsb_in, lsb_out = lsb)
     }
     catch(err_msg)
@@ -746,7 +750,7 @@ Function tblur(clip src, int "y", int "u", int "v", bool "lsb_in", bool "lsb")
         (!lsb_in && lsb) ? src.To16() : src
         (lsb || lsb_in) ? average16(prev, next, y=y, u=u, v=v).average16(last, y=y, u=u, v=v) : last
         (lsb_in && !lsb) ? ditherpost(mode = -1) : last
-        (lsb || lsb_in) ? last : mt_average(prev, next, y=y, u=u, v=v).mt_average(src, y=y, u=u, v=v)
+        (lsb || lsb_in) ? last : (u+y+v==9) ? average(prev, 0.25, src, 0.5, next, 0.25) : mt_average(prev, next, y=y, u=u, v=v).mt_average(src, y=y, u=u, v=v)
     }
     return last
 }
@@ -779,7 +783,7 @@ Function qeedi_vert(clip input, clip "mclip", bool "Y", bool "U", bool "V", floa
     vv = (V) ? 3 : 1
     mclip    = Default(mclip,    Undefined())
     vthreshmul  = Default(vthreshmul, 1)
-    splinesclip = Default(splinesclip, False)
+    splinesclip = Default(splinesclip, true)
     revert = Default(revert, False)
     vthresh0 = vthreshmul*32
     vthresh1 = vthreshmul*64
@@ -795,7 +799,7 @@ Function qeedi_vert(clip input, clip "mclip", bool "Y", bool "U", bool "V", floa
     edied = mt_logic(newfield_sclip, newfield_eedi3, "xor", y=yy, u=uu, v=vv)
     edi_halved = edi.Dither_convert_8_to_16().dither_resize16nr(width(), target_height, src_top=src_top*2-0.5, src_height=src_height*2-0.5, y=yy, u=uu, v=vv).ditherpost(mode=-1, y=yy, u=uu, v=vv)
     input = (src_top==0 && src_height==0 && target_height==input.Height()) ? input
-    \                    : input.spline36resize(width(), target_height, src_top=src_top, src_height=src_height)
+    \                    : input.spline64resize(width(), target_height, src_top=src_top, src_height=src_height)
     return revert ? input.mt_merge(edi_halved, edied.bilinearresize(width(), target_height, src_top=src_top-0.5, src_height=src_height).mt_binarize(0, y=yy, u=uu, v=vv))
     \             : edi_halved
 }
@@ -810,9 +814,20 @@ Function qeedi(clip input, clip "mclip", bool "Y", bool "U", bool "V", float "al
     qeedi_vert(last, mclipR, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, threads, vcheck, vthreshmul, vthresh2, splinesclip, target_width, src_left, src_width, revert)
     TurnLeft()
     mclip = (!Defined(mclip) || !Defined(src_left) && !Defined(src_width) && !Defined(target_width)) ? mclip 
-    \           : mclip.bilinearresize(width(), width(), src_left=src_left, src_width=src_width)
+    \           : mclip.bilinearresize(width(), height(), src_left=src_left, src_width=src_width)
     qeedi_vert(last, mclip, Y, U, V, alpha, beta, gamma, nrad, mdis, hp, threads, vcheck, vthreshmul, vthresh2, splinesclip, target_height, src_top, src_height, revert)
     return last
+}
+
+Function qnnedi(clip input)
+{
+    input.TurnRight()
+    nnedi3(0, dh=true, nsize=4, nns=3, qual=2, etype=0, pscrn=2)
+    spline64resize(input.height, input.width, 0, 0.5)
+    TurnLeft()
+    nnedi3(0, dh=true, nsize=4, nns=3, qual=2, etype=0, pscrn=2)
+    return spline64resize(input.width, input.height, 0, 0.5)
+
 }
 
 Function mt_shiftnmul(clip src, int "threshold", int "res", float "mul", bool "upper", int "Y", int "U", int "V", string "chroma", int "offX", int "offY", int "w", int "h", bool "sse2", bool "sse3", bool "ssse3", bool "sse4")
@@ -862,10 +877,10 @@ Function Credmask_Bmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BE
     return m1
 }
 
-function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3"
-\                                  , int "WThr1", int "WExp1", int "WThr2", int "WExp2", int "WThr3", int "WExp3"
-\                                  , int "CThr1", int "CExp1", int "CThr2", int "CExp2", int "CThr3", int "CExp3", int "u", int "v"
-\                                  , int "EThr1", int "EExp1", int "EThr2", int "EExp2", int "EThr3", int "EExp3", bool "soft", bool "subspl")
+function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", int "BThr3", int "BExp3",
+\                           int "WThr1", int "WExp1", int "WThr2", int "WExp2", int "WThr3", int "WExp3",
+\                           int "CThr1", int "CExp1", int "CThr2", int "CExp2", int "CThr3", int "CExp3", int "u", int "v",
+\                           int "EThr1", int "EExp1", int "EThr2", int "EExp2", int "EThr3", int "EExp3", bool "soft", bool "subspl")
 {
     BThr1 = Default(BThr1, 0)
     WThr1 = Default(WThr1, 0)
@@ -883,34 +898,34 @@ function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", 
     c = mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +").Credmask_Bmask(CThr1, CExp1, CThr2, CExp2, CThr3, CExp3, soft, subspl=IsByte(CThr1))
     c = c.bilinearresize(w.Width(), w.Height(), IsByte(CThr1) ? 0.25 : 0.25/3, 0, IsByte(CThr1) ? u.Width()/3.0 : u.Width(), IsByte(CThr1) ? u.Height()/3.0 : u.Height())    
     e = y.mt_edge("min/max", 0,255).Credmask_Bmask(EThr1, EExp1, EThr2, EExp2, EThr3, EExp3, soft, subspl, inv=true)
-    w = (WThr1!=0) ? w : y.mt_lut(y=-255)
+    w = (WThr1!=0) ? w : subspl ? y.susample(3).mt_lut(y=-255) : y.mt_lut(y=-255)
     wb = (BThr1!=0) ? ((WThr1!=0) ? mt_logic(w,b,"min") : b) : w
     wbc = (CThr1!=0) ?  mt_logic(wb,c,"min") : wb
     wbce = (EThr1!=0) ? mt_logic(wbc,e,"min") : wbc
     return wbce#mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +")#
 }
 
-Function SMoothD2yuv(clip src, int "quant", int "num_shift", int "Matrix", int "Qtype", int "ZW",  int "ncpu")
-{
-    Y = src.SmoothD2(quant=quant, num_shift=num_shift, Matrix=Matrix, Qtype=Qtype, ZW=ZW, ncpu=ncpu)
-    U = src.UtoY().SmoothD2(quant=quant, num_shift=num_shift, Matrix=Matrix, Qtype=Qtype, ZW=ZW, ncpu=ncpu)
-    V = src.VtoY().SmoothD2(quant=quant, num_shift=num_shift, Matrix=Matrix, Qtype=Qtype, ZW=ZW, ncpu=ncpu)
-    return YtoUV(U, V, Y)
-}
 
-Function SD2_preset(clip src, int "strength", int "num_shift", bool "display")
-{
-    strength = Default(strength, 0)
-    display = Default(display, false)
-    matrix = (strength < 22) ? 9 : 22
-    quant =  (strength < 13) ? strength+1
-    \          : (strength < 22) ? strength*2-11
-    \                                   : min(strength/9+2, 30)
-    quant = max(quant, 1)
-    db = src.SMoothD2yuv(quant=quant, matrix=matrix, num_shift=num_shift)
-    db = display ? db.subtitle("deblocked, strength="+string(strength), y=40) : db
-    return (strength < 0) ? src : db
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Function XDMC_shiftcolor(clip src, clip ref, int "block", bool "doublechroma")
 {
@@ -1143,6 +1158,23 @@ Function Framematch(clip src, clip ref, clip "msk", clip "out", int "mskmode", i
     mt_lutxyz(out, evaled, selected, y=5, u=5, v=5)
     return last
 }
+"""
+Ghettodelogo can delogo alpha-blended white logos.
+First use ghettodelogo_makemask:
+ clean - clip without logo
+ logo - same clip with logo
+ bgcolor - color behind logo (? i don't remember ) )
+ logocolor - color of logo (default probably works)
+This function will output a greyscale mask. Save it as ebmp with Imagewriter
+
+For actual delogo, use ghettodelogo function:
+ src - clip to delogo
+ msk - mask from Ghettodelogo (use imagereader to read ebmp)
+ logocolor - same as in ghettodelogo_makemask
+ lsb_in - clip bitdepth
+Function always returns 16-bit clip and it will be very slow if you process whole clip, so you should crop logo area (do it while making mask too)
+"""
+
 
 Function ghettodelogo_makemask(clip clean, clip logo, float "bgcolor", float "logocolor")
 {
@@ -1160,16 +1192,16 @@ Function ghettodelogo(clip src, clip msk, float "logocolor", bool "lsb_in")
     lsb_in= Default(lsb_in, false)
     src
     msk = msk.trim(0, -1)
-    blockyrange = msk.removegrain().mt_lut("x 50 - 10 *").logicdownscale(8, "max").desusample(Width(), Height()/2, 8, point=true)
+    blockyrange = msk.removegrain().mt_lut("x 50 - 10 *").logicdownscale(8, "max").desusample(msk.Width(), msk.Height(), 8, point=true)
     \                .mt_expand_oct(4).ablur(1, 0)
-    msk = msk.blankclip(color_yuv=$000000).mt_merge(msk, blockyrange)
+    msk = msk.blankclip(color_yuv=$0A0A0A).mt_merge(msk, blockyrange)
     msk = YtoUV(msk.bilinearresize(msk.Width/2, msk.Height/2, -0.5), msk.bilinearresize(msk.Width/2, msk.Height/2, -0.5), msk)
     msk = msk.loop().trim(0, -FrameCount())
     blockyrange = blockyrange.loop().trim(0, -FrameCount())
     alpha = " y 10 - 2 / 255 / "
     msb = lsb_in ? src.dither_get_msb() : src
     delogo = dither_lutxy8(msb, msk, expr="x 128 - 112 / 1 + "+alpha+" - 1 "+alpha+" - / 1 - 112 * 128 + 256 *", yexpr="x 16 - "+string(logocolor-16)+" / "+alpha+" - 1 "+alpha+" - / "+string(logocolor-16)+" * 16 + 256 *", u=3, v=3)
-    delogo = lsb_in? delogo.dither_add16(src.dither_get_lsb().to16(nullmsb=true)) : delogo
+    delogo = lsb_in ? delogo.dither_add16(src.dither_get_lsb().to16(nullmsb=true)) : delogo
     dft = delogo.dfttest_sp(sbsize=6, sosize=4, sstring="0:1 0.3:10 0.6:10 0.7:9 1:35")
     delogo = delogo.dither_merge16_8(dft, blockyrange.ConverttoYV12(), luma=true, u=3, v=3)
     src = lsb_in ? src : src.to16()

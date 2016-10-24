@@ -278,7 +278,7 @@ Function ivtcpp_ScriptIVTC_X0mc (clip src, bool "draft", string "deint")
     comp   = jitter.MFlowInter (jsup, vect_b, vect_f, time=50, thSCD1=400)
     fixed  = comp.SelectEvery (2, 0)
     Interleave (clean, fixed)
-    txt60 = last.ScriptClip("Trim(((50 - frame_ref*2) % 5) / 2, 0)")
+    txt60 = last.ScriptClip("Trim(min(1, ((50 - frame_ref*2) % 5) / 2), 0)")
     #30p+24t
     clean  = src.scriptclip("SelectEvery (5, -1 - (40 - frame_ref * 2  % 10)%10/2)")
     jitter = src60.ScriptClip("SelectEvery (1, -1 - (40 - frame_ref * 2  % 10) % 10)").DeleteEvery(10, 8).AssumeFPS(9)
@@ -288,7 +288,7 @@ Function ivtcpp_ScriptIVTC_X0mc (clip src, bool "draft", string "deint")
     comp   = jitter.MFlowFPS (jsup, vect_b, vect_f, num=4, den=1, thSCD1=400)
     fixed  = comp.SelectEvery (4, 1, 2, 3)
     InterleaveEvery (clean, fixed, 4, 1, 2, 3)
-    txt30 = last.ScriptClip("Trim (Select((40 - frame_ref * 2  % 10) % 10 / 2, 1, 2, 3, 3, 4), 0)")
+    txt30 = last.ScriptClip("Trim (Select((40 - frame_ref * 2  % 10) % 10 / 2, 1, 2, 2, 3, 4), 0)")
     
     return src.ConditionalSelect("(frame_ref<5) ? 0 : 1", txt60, txt30)
 }
@@ -311,7 +311,7 @@ Function ivtcpp_mixedcontent(clip src, clip ivtc, string "filename", int "x1", i
     mask = mixivtc.mt_lutspa(mode="absolute", expr=box)
     mixivtc = mixivtc.mt_merge(ivtc, mask, luma=true, u=3, v=3)
     return (slow<1) ? ivtc 
-    \               : ivtc.ConditionalSelect("(frame_ref >= 0) ? 0 : 1", mixivtc).ConditionalReader(filename, "frame_ref")
+    \               : ivtc.ConditionalSelect("(frame_ref >= 0) ? 0 : 1", mixivtc.scriptclip("subtitle(string(frame_ref))")).ConditionalReader(filename, "frame_ref")
 }
 
 function ivtcpp_blockingmask(clip src, bool "compress")
@@ -397,7 +397,7 @@ Function ivtcpp(clip src, string "fileprefix", clip "cleanclip", int "mc_cleanqu
     \               :(slow<4) ? mocomped
     \                         : mvdeblocked
     
-    res = display ? res.ScriptClip("""subtitle("frame "+string(current_frame), y=0)""")
-    \             : res
+    #res = display ? res.ScriptClip("""subtitle("frame "+string(current_frame), y=0)""")
+    #\             : res
     return res
 }

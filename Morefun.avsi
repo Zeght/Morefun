@@ -4,12 +4,8 @@ Function susample(clip src, int "factor", bool "lsb")
     lsb = default(lsb, false)
     tw = (src.Width()+f-1)/f
     tw = (tw % 2 == 0) ? tw : (tw+1)
-
-
     th = (src.Height()+f-1)/f
     th = ((th % 2 == 0) || (!src.IsYV12)) ? th : (th+1)
-
-
     return src.pointresize(tw, th, (f-1)/2,(f-1)/2, tw*f, th*f)
 }
 
@@ -18,7 +14,6 @@ Function desusample(clip src, int w, int h, int "factor", bool "point")
     f = default(factor, (w+src.Width()-1) / src.Width())
     point = default(point, true)
     ff = float(f)
-
     res = (!point) ? src.bilinearresize(w, h, 0, 0, w/ff, h/ff) : src.pointresize(w, h, 0, 0, w/ff, h/ff)
     return (f == 1) ? src : res
 }
@@ -904,28 +899,6 @@ function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", 
     wbce = (EThr1!=0) ? mt_logic(wbc,e,"min") : wbc
     return wbce#mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +")#
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Function XDMC_shiftcolor(clip src, clip ref, int "block", bool "doublechroma")
 {

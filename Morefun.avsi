@@ -466,8 +466,8 @@ Function Debicubic16_internal(clip src, int target_width, int target_height, flo
     diff = mt_lutxy(msb, lsb, expr, u=chroma, v=chroma).to16()
     diff_debic = (chroma==3) ? diff.debicubic(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
     \                        : diff.debicubicY(target_width, target_height, src_left, src_top, src_widthd, src_heightd, true, b, c)
-    diff_debic = diff_debic.ditherpost(mode = -1, u=chroma, v=chroma).dither_lut8("x 128 255 * +", u=chroma, v=chroma)
     diff_debic = Y8 ? diff_debic.ConvertToY8() : diff_debic
+    diff_debic = diff_debic.ditherpost(mode = -1, u=chroma, v=chroma).dither_lut8("x 128 255 * +", u=chroma, v=chroma)
     debic = (iter) ? debic.dither_add16(diff_debic, dif = true, u=chroma, v=chroma) : debic
     diff16 = Y8 ? diff16.ConvertToY8() : diff16
     diff16 = (diffexpr == "x" || diffexpr == "") ? diff16
@@ -851,10 +851,11 @@ Function Credmask_Bmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BE
     m1 = soft ? src.mt_shiftnmul(BThr1, 128, 4, upper=!inv) : src.mt_binarize(BThr1, !inv)
     #if (BExp2>BExp1)
     #{
-        src = inv ? src.mt_expand_ss(BExp2-BExp1+1, prer=1, subspl = 3)
-\                 : src.mt_inpand_ss(BExp2-BExp1+1, prer=1, subspl = 3)
+        src = inv ? src.mt_expand_ss(BExp2-(BExp1-BExp1/3), prer=BExp1/3, subspl = 3)
+\                 : src.mt_inpand_ss(BExp2-(BExp1-BExp1/3), prer=BExp1/3, subspl = 3)
         m2 = soft ? src.mt_shiftnmul(BThr2, 128, 6, upper=!inv) : src.mt_binarize(BThr2, !inv)
-        BExp3 = (BExp3-BExp2)/3-1
+        prer = (BExp2-(BExp1-BExp1/3)>9) ? 1 : 0
+        BExp3 = (BExp3-BExp2)/3
         #if (BExp3>0)
         #{
             src = inv ? src.mt_expand_ss(BExp3, prer=1, subspl = 3)
@@ -890,14 +891,14 @@ function Credmask(clip src, int "BThr1", int "BExp1", int "BThr2", int "BExp2", 
     V = src.IsY8 ? src : src.VtoY8()
     b = y.Credmask_Bmask(BThr1, BExp1, BThr2, BExp2, BThr3, BExp3, soft, subspl, inv=false)
     w = y.Credmask_Bmask(WThr1, WExp1, WThr2, WExp2, WThr3, WExp3, soft, subspl, inv=true)
-    c = mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +").Credmask_Bmask(CThr1, CExp1, CThr2, CExp2, CThr3, CExp3, soft, subspl=IsByte(CThr1))
-    c = c.bilinearresize(w.Width(), w.Height(), IsByte(CThr1) ? 0.25 : 0.25/3, 0, IsByte(CThr1) ? u.Width()/3.0 : u.Width(), IsByte(CThr1) ? u.Height()/3.0 : u.Height())    
+    c = mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +").Credmask_Bmask(CThr1, CExp1, CThr2, CExp2, CThr3, CExp3, soft, subspl=!IsByte(CThr1))
+    c = c.bilinearresize(w.Width(), w.Height(), !IsByte(CThr1) ? 0.25 : 0.25/3, 0, !IsByte(CThr1) ? u.Width()/3.0 : u.Width(), !IsByte(CThr1) ? u.Height()/3.0 : u.Height())
     e = y.mt_edge("min/max", 0,255).Credmask_Bmask(EThr1, EExp1, EThr2, EExp2, EThr3, EExp3, soft, subspl, inv=true)
     w = (WThr1!=0) ? w : subspl ? y.susample(3).mt_lut(y=-255) : y.mt_lut(y=-255)
     wb = (BThr1!=0) ? ((WThr1!=0) ? mt_logic(w,b,"min") : b) : w
     wbc = (CThr1!=0) ?  mt_logic(wb,c,"min") : wb
     wbce = (EThr1!=0) ? mt_logic(wbc,e,"min") : wbc
-    return wbce#mt_lutxy(u, v, "x "+uc+" - abs y "+vc+" - abs +")#
+    return wbce
 }
 
 Function XDMC_shiftcolor(clip src, clip ref, int "block", bool "doublechroma")

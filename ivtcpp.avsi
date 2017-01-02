@@ -129,7 +129,7 @@ Function ivtcpp_mvdeblock(clip src, string vardeblockfile, string ignorefile, cl
     spdeblock = (spdeblock=="SD2_FILE") ? """ScriptClip("SD2_preset(strength=strength-3, display=__mvddisplay)").ConditionalReader(vardeblockfile, "strength")"""
     \                                   : spdeblock
     deblockscript = """(strength>0) ?  SD2_preset(strength=strength*4 - 3 - abs(ignorestrength), num_shift=2)
-                       \            :  SMoothD2yuv(quant=1, matrix=9, num_shift=1)"""
+                       \            :  SD2_preset(strength=0, num_shift=1)"""
     src = (spdeblock!="") ? src.eval(spdeblock) : src
     anclip = Default(cleanclip, src).ScriptClip(deblockscript).ConditionalReader(vardeblockfile, "strength").ConditionalReader(ignorefile, "ignorestrength").removegrain(12)
     cachesuper = false
@@ -338,6 +338,8 @@ Function ivtcpp(clip src, string "fileprefix", clip "cleanclip", int "mc_cleanqu
     mcompfile = fileprefix+"mc_presets.txt"
     mpeg2 = Default(mpeg2, true)
     spdeblock = ucase(Default(spdeblock, mpeg2 ? "SD2_file" : ""))
+    spdeblock2 = (spdeblock=="SD2_AN") ? """ScriptClip("SD2_preset(strength=int(YPlaneMax(ivtcpp_blockingmask(true), 7))*min(3, dstrength)/3-1, display=__display)").ConditionalReader(""""+vardeblockfile+"""", "dstrength").ConditionalReader(""""+mcompfile+"""", "mcdstrength")"""
+    \                                  : spdeblock 
     spdeblock = (spdeblock=="SD2_AN") ? """ScriptClip("SD2_preset(strength=max(mcdstrength/3, int(YPlaneMax(ivtcpp_blockingmask(true), 7))*min(3, dstrength)/3)-1, display=__display)").ConditionalReader(""""+vardeblockfile+"""", "dstrength").ConditionalReader(""""+mcompfile+"""", "mcdstrength")"""
     \                                 : spdeblock 
     #spdeblock = (spdeblock=="SD2_AN") ? """ScriptClip("subtitle(string(YPlaneMax(ivtcpp_blockingmask, 10)), y=30)")"""
@@ -388,7 +390,7 @@ Function ivtcpp(clip src, string "fileprefix", clip "cleanclip", int "mc_cleanqu
     MC = (slow<4 && lsb) ? MC.Dither_convert_8_to_16() : MC
     mocomped = MC.ConditionalSelect("strength!=0 ? 0 : 1", MC, last).ConditionalReader(mcompfile, "strength")
     mvdeblocked = (slow<4) ? last : mocomped.ivtcpp_mvdeblock(vardeblockfile, mcompfile, cleanclip=cleanclip, trad=slow-2, sad=mvdeblock_sad, mpeg2=mpeg2,
-    \                                        spdeblock=spdeblock, demosquito=demosquito, cachesuper=(slow>2), lsb=lsb, display=display)
+    \                                                         spdeblock=spdeblock2, demosquito=demosquito, cachesuper=(slow>2), lsb=lsb, display=display)
     spdeblocked = lsb ? spdeblocked.Dither_convert_8_to_16() : spdeblocked
     lsb ? mocomped.Dither_convert_8_to_16() : mocomped
     mvdeblocked = (slow<3) ? mocomped.ReplaceFramesSimple(mvdeblocked, deblockfile)

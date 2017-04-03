@@ -1006,12 +1006,21 @@ function bilatinpaint(clip diff, clip msk, clip ref, float "subspl", int "limit"
     ref = ref.dither_resize16(ws, hs, kernel="linear")
     diff = diff.dither_resize16(ws, hs, kernel="linear")
     
-    avgscript = """avg = int(AverageLuma())*65536
-                  \     +int(AverageChromaU())*256
-                  \     +int(AverageChromaV())
-                   last.blankclip(color_yuv=avg)"""
-    #put (AverageY, AverageU, AverageV) on masked area
-    blank = diff.ditherpost().mt_merge(msk.blankclip(color_yuv=$808080), msk, luma=false, y=up, u=up, v=vp).scriptclip(avgscript).Dither_convert_8_to_16()
+    avgscript = """   c = dither_get_msb()
+                      m = dither_get_lsb()
+                      y = Round(c.AverageLuma()/m.AverageLuma()*255*256).min(65535).max(0)
+                      u = Round(c.AverageChromaU()/m.AverageChromaU()*255*256).min(65535).max(0)
+                      v = Round(c.AverageChromaV()/m.AverageChromaV()*255*256).min(65535).max(0)
+                      msb = y/256*65536
+                      \    +v/256*256
+                      \    +u/256
+                      lsb = y%256*65536
+                      \    +v%256*256
+                      \    +u%256
+                      stackvertical(c.blankclip(color_yuv=msb), m.blankclip(color_yuv=lsb))"""
+                      #returns average nonmasked diff
+    bin = msk.mt_binarize(192, true, y=up, u=up, v=vp)
+    blank = diff.ditherpost(mode=-1, ampn=1, staticnoise=false).mt_logic(bin, "and", y=up, u=up, v=vp).stackvertical(bin).scriptclip(avgscript)
     msk = stackvertical(msk, msk)
     diff = diff.Dither_merge16(blank, msk, y=up, u=up, v=vp, luma=false)
     #limit

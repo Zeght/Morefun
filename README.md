@@ -1,7 +1,7 @@
-#MoreFun
+# MoreFun
 Some Avisynth  scipts
 
-##MoreFun.avsi
+## MoreFun.avsi
 Collection of small scripts. Some may be documented upon request.
 
 ### Common parameters
@@ -14,33 +14,37 @@ Most of processing is done on clips subsampled with subspl factor.
 
 Sample usage:
 ```
-#"subbed" is clip with overlayed sutitles, "clean" is clean clip with slightly alternated colors, "msk" is a blurry subtitle mask
-#This alternates color of clean clip script masks subtitles
-#"clean" and "subbed" are 16bit, "msk" is 8bit
+# "subbed" is clip with overlayed sutitles, "clean" is clean clip with slightly alternated colors, "msk" is a blurry subtitle mask
+# This alternates color of clean clip script masks subtitles
+# "clean" and "subbed" are 16bit, "msk" is 8bit
 diff = dither_sub16(subbed, clean, dif=true, u=3, v=3)
-#bilatinpaint fills msk area of diff clip with colors from outside of mask, uses clean clip as reference to know how to fill
+# bilatinpaint fills msk area of diff clip with colors from outside of mask, uses clean clip as reference to know how to fill
 diff = bilatinpaint(diff, msk, clean)
 cleanshifted  = clean.dither_add16(diff, dif=true, u=3, v=3)
 merged = subbed.dither_merge16_8(cleanshifted, msk, u=3, v=3, luma=true)
 ```
 
-###Debicubic16, DebicubicY16, DebicubicY16PlusMask
+### Debicubic16, DebicubicY16, DebicubicY16PlusMask
 lsb output for debicubic is broken, those wrappers make it less broken.
-By default, script just shifts error from [+0..+128]\(on 16 bit scale) range to [-64..64] range.
-Pass a clip downscaled with Dither_resize16 to completely fix gradients or use iter=true (stolen from a certain encoder's blog) for actually precise debicubic at half speed.
+
+By default, script just shifts error from [+0..+128]\(on 16 bit scale) range to [-64..+64] range.
+
+Optional parameter _downscaled_ is a clip downscaled with Dither_resize16, it will be used on flat areas (make gradients error-free, not very usefull because you can use iter=true instead).
+
+Setting _iter_ to true will result in precise 2-pass debicubic (stolen from a certain encoder's blog, works twice as slow as usual debicubic)
 
 DebicubicY16PlusMask returns debicubic clip interleaved with so-called "detail mask".
-Mask is created by subtracting rescaled debicubic clip from source clip, applying Dither_lut16(expr) (default expr - "x 128 256 * - abs") and downscaling result.
+Detail mask is a clip in stacked 16-bit format created by subtracting rescaled debicubic clip from source clip, applying Dither_lut16(_expr_) [default _expr_ is "x 128 256 * - abs"] and downscaling result.
 
-###dfttest_ss
+### dfttest_ss
 Subsamples image with subspl factor, performs dfttest on a subsampled picture, computes difference between result and original subsampled picture and adds difference to full-size picture.
-This allow to filter oly lower frequencies at relatively low cost.
+This allows to filter lower frequencies at relatively low cost.
 Works with 16bit clips only.
 
-###Framematch(clip src, clip ref, clip "msk", clip "out", int "mskmode", int "rad", string "outfile", float "subspl", float "gamma")
-Takes 2 clips with same content, similar colors, crop, but with different framenumbers. Tries to match frames rearrange frames of _src_ clip to match frames of _ref_ clip.
+### Framematch(clip src, clip ref, clip "msk", clip "out", int "mskmode", int "rad", string "outfile", float "subspl", float "gamma")
+Takes 2 clips with same content, similar colors and crop, but with different framemaping. Tries to rearrange frames of _src_ clip to match frames of _ref_ clip.
 
-Function compares frame from ref to nearby frames from src using Cframediff from TVIVTC (same metric as tdecimate).
+Function compares frame from ref to nearby frames from src using Cframediff from TIVTC (same metric as tdecimate).
 
 Runtime filters use global variables, so it's not recommended to use this script twice in same AviSynth instance.
 
@@ -53,10 +57,10 @@ You can check history of https://gist.github.com/Zeght/89c9a763efba0b32486b for 
 * int rad (3) - temporal radius for frames comparison/search.
 * string outfile (Undefined) - name of file to write logs. Format - lines consisting of space-separated pairs (_frame_number_, _shift_(where to get frame frame from _ref_ to get same frame as _frame_number_ from src)).
 * float subspl (width/640) - clips are subsampled by this factor and then get 8px-wide borders cropped for comparison. _subspl=0_ disables subsampling and cropping.
-* float gamma (0.05) - penalizes sudden changes in frame shift. Negative values allows for crossings/decreasing mappings which is normally not required.
+* float gamma (0.05) - penalizes sudden changes in frame shift, higher absolute values means more gradual remaping. Negative values allows for crossings/decreasing mappings which is normally not required.
 
-###Framematch_selectrangeevery(clip src, int "every", int "length", int "offset", int "mul", bool "blackpad")
-Unlike AviSynth's SelectRangeEvery this version does properly with every>length and works with negative offsets.
+### Framematch_selectrangeevery(clip src, int "every", int "length", int "offset", int "mul", bool "blackpad")
+Unlike AviSynth's SelectRangeEvery this version works properly with every>length and works with negative offsets.
 
 It picks ranges [_offset_, _offset_+_length_], [_offset+every_, _offset_+_every_+_length_], [_offset+2*every_, _offset_+_2*every_+_length_] and so on.
 
@@ -68,7 +72,7 @@ SelectEvery is used internally and it wont work if _length*mul_ is larger than 1
 
 Length of returned clip is always _src.framescount*length*mul/every_.
 
-###HD_Edge
+### HD_Edge
 A hack to compute an edge mask with bit depth higher than 8 bit. It works by taking clip lsb1 - some lower bits and lsb2 - lsb1 with values circularly shifted by 128.
 Edge mask is computed for both according to selected mode, and two masks are merged using mt_logic(mode="min").
 Mode is one of mt_edge modes.
@@ -76,20 +80,20 @@ You can also compute a rangemask by setting range parameter, subsampling is auto
 Post parameter is meant for simple post-processing of resulting values and is results in output equivalent to HD_Edge(post="none").mt_lut("x "+post), "none" or "" disables this post-processing, default - " 2 *".
 Depth=2^n means that bits from n to n+8 will be used for computing mask, e.g with depth=256 only 8 least significant bits will be used.
 
-###logicdownscale(clip src, int "ss", string "mode", int "u", int "v", bool "turn")
+### logicdownscale(clip src, int "ss", string "mode", int "u", int "v", bool "turn")
 Performs downscaling by ss factor using separaterows and mt_logic.
-mode is mt_logic mode (default - "max"), turn indicates whether clip is downscaled turned with vertically, turned, downscaled vertically, and turned (true) or clip is downscaled vertically and then horizontally (false, default).
+_mode_ is mt_logic _mode_ (default - "max"), _turn_ indicates whether clip is downscaled turned with vertically, turned, downscaled vertically, and turned back (true) or clip is downscaled vertically and then horizontally (false, default).
 
-###lutspa_whitebox(int "x1", int "y1", int "x2", int "y2", int "inflate")
+### lutspa_whitebox(int "x1", int "y1", int "x2", int "y2", int "inflate")
 Makes an expression for mt_lutspa to draw a box with corners in (x1, x2) and (y1, y2) inflated by inflate pixels.
 
-###Mdenoise
+### Mdenoise
 Simple MDegrain wrapper. Disable _cachesuper_ if you want to use backward seeking.
 
 If altsad is defined then Mdenoise returns two interleaved clips: even frames are result of denoising with "sad", odd frames - "altsad".
 
 With positive _blksize_ search is done with 32x32 blocks first and then refined using _blksize blocks_, negative _blksize_ results in 1-pass search with _-blksize_ blocks. Default is 8.
-###MoreFun
+### MoreFun
 modified gradfun3 with following changes (not tested well):
 *different defaults: smode=2, lsb=lsb_in=true
 *thr_edg removed
@@ -99,13 +103,13 @@ modified gradfun3 with following changes (not tested well):
 *optional blur with big radius and big rangemask(bigmode=0 for Dither_smoothgrad, bigmode>1 for Dither_Bilateral and mask computed with pseudo (8+log(bigmode))-bit precision)
 *debug=2 shows clip after blurring with big radius, debug=1 stacks usual small radius rangemask with the big one
 
-###mt_xxpand_ss (clip src, int "radius", int "radiusc", bool "halfchroma", int "subspl", int "prer", bool "square", int "y", int "u", int "v")
+### mt_xxpand_ss (clip src, int "radius", int "radiusc", bool "halfchroma", int "subspl", int "prer", bool "square", int "y", int "u", int "v")
 Performs expanding/inpanding using multiple mt_expand/mt_expand calls with subsampling, subspl factor is used.
 By default, radiusc is set to raduis/2 if halfchroma is true, otherwise radius c is set to radus.
 prer=n means that mask was already inpanded/expanded n times, so it's possible to skip some inpanding/expanding before subsampling, default is 0.
 Square kernel is used if sqare is set to true, octagonal kernel is used otherwise(default).
 
-###qeedi
+### qeedi
 Runs horizontal anti-aliasing (turn, eedi3, downscale, turn) and vertical anti-aliasing (eedi3, downscale).
 Runs slightly faster then eedi3_resize16 because eedi3 is done on a smaller clip.
 splinesclip indicates whether Dither_resize16nr() is used to generate sclip instead of default cubic.
@@ -113,31 +117,31 @@ revert=true means that pixels not belonging to edge (edge wasn't found by eedi) 
 target_width, target_height, src_left , src_top , src_width ,src_height can be used to do custom resizing/cropping instead of reverting size back on downscaling.
 Chroma processing is discouraged because downscaling is inaccurate in this wrapper.
 
-###RangeMask
+### RangeMask
 Computes a range mask (difference between maximum and minimum in the radius), similar to Dither_build_gf3_range_mask.
 Subsampling is used for radius>5, factor can be overridden with subspl parameter, mask isn't upscaled back if noup parameter is set to true.
 Post parameter is same as in HD_Edge, default=""
 
-###RemapFramesSimpleR
+### RemapFramesSimpleR
 RemapFramesSimple with support of ranges and without support of files. Provides an alternative way to splice a number of trims, e.g. RemapFramesSimpleR("[100 200] [500 800]") is same as Trim(100, 200)++Trim(500, 800).
 
-###susample/desusample
+### susample/desusample
 Susample subsamples picture with defined factor using pointresize and adds padding when necessary.
 Used in functions mt_inpand_ss/mt_expand_ss and RangeMask.
 Desusample reverts susample and returns clip with w x h dimensions, point is used if point parameter is set to true (default) bilinear is used otherwise.
 
-###tblur, texpand, tinpand, tinflate, tdeflate
+### tblur, texpand, tinpand, tinflate, tdeflate
 Simple temporal filters: tblur does temporal blur with (0.25, 0.5, 0.25) kernel using raveragew (or average/dither_merge if raveragew isn't avaliable), 
 
-##shortcuts.avsi
+## shortcuts.avsi
 Some shortcuts. Used by some scripts from MoreFun.avsi
-###mt_xxpand_sq, mt_xxpand_oct
+### mt_xxpand_sq, mt_xxpand_oct
 Same as mt_xxpand_ss but without subsampling.
 mt_xxpand_sq uses square kernel, mt_xxpand_oct uses octagonal kernel.
-###dfttest_sp
+### dfttest_sp
 Spatial dfttest - dfttest with different defaults. tbsize is 1, lsb_in/lsb is true.
 
-##fixborders (fixborders.avsi)
+## fixborders (fixborders.avsi)
 Function for correcting darkened/brightened borders. Multiplies values of border lines by specified amount
 
 Requires Dither package
@@ -161,7 +165,7 @@ Parameters:
 * int disable_thr - reverts image on frames where script seems to fail (144 is sane value, smaller values make it disable more)
 
 
-##awarpsharp16 (awarpsharp16.avsi)
+## awarpsharp16 (awarpsharp16.avsi)
 awarpsharp2 wrapper with additional features.
 
 Works with any planar YUV colorspaces, usage of non-square pixels is discouraged.
@@ -198,5 +202,5 @@ Parameters:
 * lsb: 16bit stacked input and output
 * cplace: chroma placement "MPEG2" (default) or "MPEG1"
 
-##IVTCPP (ivtcpp.avsi)
+## IVTCPP (ivtcpp.avsi)
 A collection of scripts for post-processing telecined material. Required by Macron_IVTC(https://github.com/Zeght/Macron)

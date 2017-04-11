@@ -986,13 +986,13 @@ Function BDMC(clip src,  clip "anclip", clip "cleanclip", int "sad", int "colori
 
 function bilatinpaint(clip diff, clip msk, clip ref, float "subspl", int "limit", int "y", int "u", int "v")
 {
-    y = Default(u, 3)
+    y = Default(y, 3)
     u = Default(u, 3)
     v = Default(v, 3)
     limit = Default(limit, 48)
     yp = (y==3) ? 3 : 1
-    up = (y==3) ? 3 : 1
-    vp = (y==3) ? 3 : 1
+    up = (u==3) ? 3 : 1
+    vp = (v==3) ? 3 : 1
     w = msk.Width()
     h = msk.Height()
     subspl = Default(subspl, (w>1280) ? 3 : 2)
@@ -1019,23 +1019,23 @@ function bilatinpaint(clip diff, clip msk, clip ref, float "subspl", int "limit"
                       \    +u%256
                       stackvertical(c.blankclip(color_yuv=msb), m.blankclip(color_yuv=lsb))"""
                       #returns average nonmasked diff
-    bin = msk.mt_binarize(192, true, y=up, u=up, v=vp)
-    blank = diff.ditherpost(mode=-1, ampn=1, staticnoise=false).mt_logic(bin, "and", y=up, u=up, v=vp).stackvertical(bin).scriptclip(avgscript)
+    bin = msk.mt_binarize(192, true, y=yp, u=up, v=vp)
+    blank = diff.ditherpost(mode=-1, ampn=1, staticnoise=false).mt_logic(bin, "and", y=yp, u=up, v=vp).stackvertical(bin).scriptclip(avgscript)
     msk = stackvertical(msk, msk)
-    diff = diff.Dither_merge16(blank, msk, y=up, u=up, v=vp, luma=false)
+    diff = diff.Dither_merge16(blank, msk, y=yp, u=up, v=vp, luma=false)
     #limit
     msb = diff.dither_get_msb().mt_binarize(128+limit, mode="t x", u=3, v=3).mt_binarize(128-limit-1, mode="x t", u=3, v=3)
     lsb = diff.dither_get_lsb()
     diff = (0<limit && limit<128) ? stackvertical(msb, lsb) : diff
     #copypaste colors from neighborhood pixels if colors on ref are somewhat similar
-    diff = Dither_merge16(diff, diff.Dither_bilateral16(ref=ref, radius=min(hs, ws/5), thr=20, subspl=hs*3/2, flat=0.1, y=up, u=up, v=vp), msk, luma=false, y=up, u=up, v=vp)
+    diff = Dither_merge16(diff, diff.Dither_bilateral16(ref=ref, radius=min(hs, ws/5), thr=20, subspl=hs*3/2, flat=0.1, y=yp, u=up, v=vp), msk, luma=false, y=yp, u=up, v=vp)
     #copypaste colors from neighborhood pixels if colors on ref are very similar
-    diff = Dither_merge16(diff, diff.Dither_bilateral16(ref=ref, radius=min(hs, ws*2/13), thr=4, flat=0.00, y=up, u=up, v=vp), msk, luma=false, y=up, u=up, v=vp)
+    diff = Dither_merge16(diff, diff.Dither_bilateral16(ref=ref, radius=min(hs, ws*2/13), thr=4, flat=0.00, y=yp, u=up, v=vp), msk, luma=false, y=yp, u=up, v=vp)
     #smooth
-    diff = Dither_merge16(diff, diff.Dither_bilateral16(ref=ref, radius=ws/40, thr=3, flat=0.00, y=up, u=up, v=vp), msk, luma=false, y=up, u=up, v=vp)
-    diff = diff.Dither_bilateral16(ref = ref, radius=max(2, ws/80), thr=5, flat=0.00, y=up, u=up, v=vp)
-    diff = diff.dither_resize16(w, h).Dither_bilateral16(ref=ref0, radius=2, thr=3, flat=0.00, y=up, u=up, v=vp)
-    diff = Dither_switch_planes16 (diff, diff, y=y, u=u, v=v)
+    diff = Dither_merge16(diff, diff.Dither_bilateral16(ref=ref, radius=ws/40, thr=3, flat=0.00, y=yp, u=up, v=vp), msk, luma=false, y=yp, u=up, v=vp)
+    diff = diff.Dither_bilateral16(ref = ref, radius=max(2, ws/80), thr=5, flat=0.00, y=yp, u=up, v=vp)
+    diff = diff.dither_resize16(w, h).Dither_bilateral16(ref=ref0, radius=2, thr=3, flat=0.00, y=yp, u=up, v=vp)
+    diff = Dither_switch_planes16(diff0, diff, y=y, u=u, v=v)
     return diff
 }
 
